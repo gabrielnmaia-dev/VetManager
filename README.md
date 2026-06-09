@@ -264,6 +264,4 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 
 ---
 
-<div align="center">
-  Feito com ❤️ · <a href="https://github.com/seu-usuario">@seu-usuario</a>
-</div>
+
