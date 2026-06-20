@@ -16,7 +16,7 @@ logs:
 migrate:
 	docker compose exec web python manage.py migrate
 
-makemigrations:
+migrations:
 	docker compose exec web python manage.py makemigrations
 
 createsuperuser:

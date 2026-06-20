@@ -51,8 +51,8 @@ INSTALLED_APPS = [
     'apps.veterinarios',
     'apps.atendimentos',
     'apps.prontuario',
-    'apps.financeiro',
     'apps.dashboard',
+    'apps.base'
 ]
 
 
