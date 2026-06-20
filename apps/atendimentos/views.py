@@ -1,3 +1,30 @@
-from django.shortcuts import render
-
-# Create your views here.
+from rest_framework import viewsets
+from .models import Atendimento
+from .serializers import AtendimentoSerializer
+ 
+ 
+class AtendimentoViewSet(viewsets.ModelViewSet):
+    queryset = Atendimento.objects.select_related("pet", "pet__tutor").all()
+    serializer_class = AtendimentoSerializer
+ 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        params = self.request.query_params
+ 
+        pet_id = params.get("pet")
+        if pet_id:
+            qs = qs.filter(pet_id=pet_id)
+ 
+        status_param = params.get("status")
+        if status_param:
+            qs = qs.filter(status=status_param)
+ 
+        data_inicio = params.get("data_inicio")
+        data_fim = params.get("data_fim")
+        if data_inicio:
+            qs = qs.filter(data_hora_inicio__date__gte=data_inicio)
+        if data_fim:
+            qs = qs.filter(data_hora_inicio__date__lte=data_fim)
+ 
+        return qs
+ 
