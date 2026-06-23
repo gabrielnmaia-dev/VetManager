@@ -17,7 +17,6 @@ class PetSerializer(serializers.ModelSerializer):
             "sexo",
             "peso",
             "data_nascimento",
-            "cor",
             "observacoes",
             "criado_em",
             "atualizado_em",
