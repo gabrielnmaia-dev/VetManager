@@ -155,9 +155,16 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 
+
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": "redis://redis:6379/1",
     }
+}
+
+REST_FRAMEWORK = {
+    # ...o que já tiver aqui...
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
 }

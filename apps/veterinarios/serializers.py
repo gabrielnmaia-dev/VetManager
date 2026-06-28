@@ -9,7 +9,7 @@ class VeterinarioSerializer(serializers.ModelSerializer):
         
 
 class ProfissionalSerializer(serializers.ModelSerializer):
-    veterinario = VeterinarioSerializer(read_only=True)
+    veterainario = VeterinarioSerializer(read_only=True)
     
     class Meta:
         model = Profissional
