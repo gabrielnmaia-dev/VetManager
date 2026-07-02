@@ -6,6 +6,7 @@ from django.views.decorators.cache import cache_page
 
 
 class AtendimentoViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
     queryset = Atendimento.objects.select_related("pet", "pet__tutor").all()
     serializer_class = AtendimentoSerializer
     filter_backends = [filters.SearchFilter]
