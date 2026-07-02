@@ -3,6 +3,8 @@ from .models import Atendimento
 from .serializers import AtendimentoSerializer
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
+from rest_framework.permissions import IsAuthenticated
+
 
 
 class AtendimentoViewSet(viewsets.ModelViewSet):
