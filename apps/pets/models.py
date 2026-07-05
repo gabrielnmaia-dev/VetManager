@@ -17,6 +17,7 @@ class Pet(BaseModel):
     nome = models.CharField(max_length=100)
     especie = models.CharField(max_length=50)
     raca = models.CharField(max_length=50, blank=True)
+    cor = models.CharField(max_length=50, blank=True)
     sexo = models.CharField(max_length=1, choices=Sexo.choices, blank=True)
     castrado = models.BooleanField(default=False)
     vermifugado = models.BooleanField(default=False)
