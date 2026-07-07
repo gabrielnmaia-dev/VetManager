@@ -50,6 +50,6 @@ class VacinaViewSet(viewsets.ModelViewSet):
             qs = qs.filter(pet_id=pet_id)
         return qs
 
-    @method_decorator(cache_page(60 * 5))
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
+    # @method_decorator(cache_page(60 * 5))
+    # def list(self, request, *args, **kwargs):
+    #     return super().list(request, *args, **kwargs)
