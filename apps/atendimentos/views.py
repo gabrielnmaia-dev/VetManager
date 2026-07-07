@@ -35,6 +35,6 @@ class AtendimentoViewSet(viewsets.ModelViewSet):
 
         return qs
 
-    @method_decorator(cache_page(60 * 5))  # cache de 5 minutos
-    def list(self, request, *args, **kwargs):
-            return super().list(request, *args, **kwargs)
+    # @method_decorator(cache_page(60 * 5))  # cache de 5 minutos
+    # def list(self, request, *args, **kwargs):
+    #         return super().list(request, *args, **kwargs)
