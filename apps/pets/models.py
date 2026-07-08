@@ -21,7 +21,6 @@ class Pet(BaseModel):
     sexo = models.CharField(max_length=1, choices=Sexo.choices, blank=True)
     castrado = models.BooleanField(default=False)
     vermifugado = models.BooleanField(default=False)
-    peso = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     data_nascimento = models.DateField(null=True, blank=True)
     observacoes = models.TextField(blank=True)
 

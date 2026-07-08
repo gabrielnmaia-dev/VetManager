@@ -15,6 +15,7 @@ class Atendimento(BaseModel):
         BANHO = "banho", "Banho"
         TOSA = "tosa", "Tosa"
         BANHO_E_TOSA = "banho_e_tosa", "Banho e Tosa"
+        BANHO_E_TOSA_HIGIENICA = "banho_e_tosa_higienica", "Banho e Tosa Higiênica"
 
     class Status(models.TextChoices):
         AGENDADO = "agendado", "Agendado"
@@ -28,7 +29,7 @@ class Atendimento(BaseModel):
     # Por enquanto simples, vira FK pra Profissional depois.
     nome_profissional = models.CharField(max_length=100)
 
-    tipo_servico = models.CharField(max_length=20, choices=TipoServico.choices)
+    tipo_servico = models.CharField(max_length=60, choices=TipoServico.choices)
     queixa = models.CharField(max_length=255, blank=True)
 
     data_hora_inicio = models.DateTimeField()
