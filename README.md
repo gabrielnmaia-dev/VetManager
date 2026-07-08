@@ -9,7 +9,7 @@
 [![DRF](https://img.shields.io/badge/Django_REST_Framework-3.x-A30000?style=flat)](https://www.django-rest-framework.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)](https://docker.com)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat)](LICENSE)
+
 
 Sistema completo para gerenciar atendimentos, pets, tutores e financeiro de clínicas veterinárias de pequeno e médio porte.
 
