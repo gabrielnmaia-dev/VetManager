@@ -36,3 +36,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://vetmaneger-front.*\.vercel\.app$",
+]
