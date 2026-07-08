@@ -16,7 +16,6 @@ class PetSerializer(serializers.ModelSerializer):
             "raca",
             "sexo",
             "cor",
-            "peso",
             "vermifugado",
             "castrado",
             "data_nascimento",
