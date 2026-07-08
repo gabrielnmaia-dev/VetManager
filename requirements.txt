@@ -8,3 +8,4 @@ python-decouple>=3.8
 django-cors-headers==4.9.0
 redis==5.0.1
 gunicorn==21.2.0
+dj-database-url==2.1.0
