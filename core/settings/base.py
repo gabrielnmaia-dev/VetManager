@@ -12,16 +12,35 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
+
+def env_bool(name, default=False):
+    return os.environ.get(name, str(default)).strip().lower() in ("1", "true", "yes", "on")
+
+
+def env_int(name, default):
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def env_list(name, default=""):
+    return [v.strip() for v in os.environ.get(name, default).split(",") if v.strip()]
+
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+# base.py fica em core/settings/, então subimos 3 níveis até a raiz do projeto.
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
+# Em produção (prod.py) a ausência da SECRET_KEY interrompe o boot.
 SECRET_KEY = os.environ.get('SECRET_KEY')
     
 
@@ -44,9 +63,11 @@ INSTALLED_APPS = [
     'corsheaders',
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'django_filters',
     'drf_spectacular',
     # Apps locais
+    'apps.accounts.apps.AccountsConfig',
     'apps.tutores',
     'apps.pets',
     'apps.veterinarios',
@@ -57,25 +78,81 @@ INSTALLED_APPS = [
 ]
 
 
+# --- Autenticação ------------------------------------------------------
+# O backend com bloqueio protege TANTO o login JWT quanto o /admin contra
+# força bruta (ver apps/accounts/lockout.py).
+AUTHENTICATION_BACKENDS = [
+    'apps.accounts.backends.LockoutModelBackend',
+]
+
+# Bloqueio de login após tentativas falhas (força bruta).
+LOGIN_LOCKOUT = {
+    # Falhas permitidas por usuário+IP dentro da janela.
+    'MAX_ATTEMPTS': env_int('LOGIN_MAX_ATTEMPTS', 5),
+    # Falhas permitidas por IP (qualquer usuário) — evita "password spraying".
+    'IP_MAX_ATTEMPTS': env_int('LOGIN_IP_MAX_ATTEMPTS', 20),
+    # Janela de contagem das falhas (segundos).
+    'WINDOW_SECONDS': env_int('LOGIN_WINDOW_SECONDS', 15 * 60),
+    # Tempo de bloqueio após exceder o limite (segundos).
+    'LOCKOUT_SECONDS': env_int('LOGIN_LOCKOUT_SECONDS', 15 * 60),
+}
+
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    # RBAC: views que declaram `role_policy` exigem os grupos indicados
+    # (ver apps/accounts/permissions.py). Sem `role_policy`, basta estar logado.
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
+        'apps.accounts.permissions.RoleBasedPermission',
     ),
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',
+    # --- Rate limiting (DDoS de aplicação / abuso) ---
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'apps.accounts.throttles.UserBurstRateThrottle',
+        'apps.accounts.throttles.UserSustainedRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': os.environ.get('THROTTLE_ANON', '30/min'),
+        'user_burst': os.environ.get('THROTTLE_USER_BURST', '120/min'),
+        'user_sustained': os.environ.get('THROTTLE_USER_SUSTAINED', '3000/hour'),
+        'login': os.environ.get('THROTTLE_LOGIN', '5/min'),
+        'token_refresh': os.environ.get('THROTTLE_TOKEN_REFRESH', '30/min'),
+    },
+    # Quantidade de proxies reversos confiáveis à frente do Django.
+    # Usado para descobrir o IP real do cliente via X-Forwarded-For
+    # (throttling e bloqueio de login). None = usa REMOTE_ADDR.
+    'NUM_PROXIES': (
+        env_int('NUM_PROXIES', 0) if os.environ.get('NUM_PROXIES') else None
+    ),
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=env_int('JWT_ACCESS_MINUTES', 30)),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=env_int('JWT_REFRESH_DAYS', 1)),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'TOKEN_OBTAIN_SERIALIZER': 'apps.accounts.serializers.VetTokenObtainPairSerializer',
 }
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'VetManager API',
     'DESCRIPTION': 'API para gerenciamento de clínica veterinária',
     'VERSION': '1.0.0',
+    'COMPONENT_SPLIT_REQUEST': True,
 }
 
 
@@ -130,6 +207,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 10},
     },
     {
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
@@ -157,14 +235,27 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Limites de payload (mitiga abuso/DoS por requisições enormes).
+DATA_UPLOAD_MAX_MEMORY_SIZE = env_int('DATA_UPLOAD_MAX_MEMORY_SIZE', 5 * 1024 * 1024)
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
 
 
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": "redis://redis:6379/1",
+# Cache: usado também pelo throttling e pelo bloqueio de login.
+# Em produção use Redis (compartilhado entre os workers do Gunicorn).
+_redis_url = os.environ.get('REDIS_URL')
+if _redis_url:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": _redis_url,
+        }
     }
-}
+else:
+    CACHES = {
+        "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+    }
 
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -178,3 +269,14 @@ CORS_ALLOW_HEADERS = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'loggers': {
+        'django.security': {'handlers': ['console'], 'level': 'WARNING'},
+        'vetmanager.security': {'handlers': ['console'], 'level': 'INFO'},
+    },
+}
