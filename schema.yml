@@ -1,0 +1,2532 @@
+openapi: 3.0.3
+info:
+  title: VetManager API
+  version: 1.0.0
+  description: API para gerenciamento de clínica veterinária
+paths:
+  /api/schema/:
+    get:
+      operationId: schema_retrieve
+      description: |-
+        OpenApi3 schema for this API. Format can be selected via content negotiation.
+
+        - YAML: application/vnd.oai.openapi
+        - JSON: application/vnd.oai.openapi+json
+      parameters:
+      - in: query
+        name: format
+        schema:
+          type: string
+          enum:
+          - json
+          - yaml
+      - in: query
+        name: lang
+        schema:
+          type: string
+          enum:
+          - af
+          - ar
+          - ar-dz
+          - ast
+          - az
+          - be
+          - bg
+          - bn
+          - br
+          - bs
+          - ca
+          - ckb
+          - cs
+          - cy
+          - da
+          - de
+          - dsb
+          - el
+          - en
+          - en-au
+          - en-gb
+          - eo
+          - es
+          - es-ar
+          - es-co
+          - es-mx
+          - es-ni
+          - es-ve
+          - et
+          - eu
+          - fa
+          - fi
+          - fr
+          - fy
+          - ga
+          - gd
+          - gl
+          - he
+          - hi
+          - hr
+          - hsb
+          - ht
+          - hu
+          - hy
+          - ia
+          - id
+          - ig
+          - io
+          - is
+          - it
+          - ja
+          - ka
+          - kab
+          - kk
+          - km
+          - kn
+          - ko
+          - ky
+          - lb
+          - lt
+          - lv
+          - mk
+          - ml
+          - mn
+          - mr
+          - ms
+          - my
+          - nb
+          - ne
+          - nl
+          - nn
+          - os
+          - pa
+          - pl
+          - pt
+          - pt-br
+          - ro
+          - ru
+          - sk
+          - sl
+          - sq
+          - sr
+          - sr-latn
+          - sv
+          - sw
+          - ta
+          - te
+          - tg
+          - th
+          - tk
+          - tr
+          - tt
+          - udm
+          - ug
+          - uk
+          - ur
+          - uz
+          - vi
+          - zh-hans
+          - zh-hant
+      tags:
+      - schema
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/vnd.oai.openapi:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/yaml:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/vnd.oai.openapi+json:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/atendimentos/:
+    get:
+      operationId: v1_atendimentos_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAtendimentoList'
+          description: ''
+    post:
+      operationId: v1_atendimentos_create
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AtendimentoRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AtendimentoRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AtendimentoRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Atendimento'
+          description: ''
+  /api/v1/atendimentos/{id}/:
+    get:
+      operationId: v1_atendimentos_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this atendimento.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Atendimento'
+          description: ''
+    put:
+      operationId: v1_atendimentos_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this atendimento.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AtendimentoRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AtendimentoRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AtendimentoRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Atendimento'
+          description: ''
+    patch:
+      operationId: v1_atendimentos_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this atendimento.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAtendimentoRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAtendimentoRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAtendimentoRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Atendimento'
+          description: ''
+    delete:
+      operationId: v1_atendimentos_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this atendimento.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/atendimentos/rapido/:
+    post:
+      operationId: atendimento_rapido_create
+      description: Cria um atendimento em uma única requisição. Informe `tutor_id`/`pet_id`
+        para usar registros já existentes ou `tutor`/`pet` para cadastrá-los em cascata
+        — nunca os dois ao mesmo tempo. O pet existente precisa pertencer ao tutor
+        informado. Para o profissional, envie `profissional_id` (preferencial) ou,
+        por compatibilidade, `nome_profissional` — pelo menos um dos dois. O mesmo
+        profissional não pode ter dois atendimentos sobrepostos (cancelados são ignorados).
+        Tudo é criado em uma única transação (rollback em caso de falha).
+      summary: Criar atendimento rápido (tutor + pet em uma chamada)
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AtendimentoRapidoRequest'
+            examples:
+              TutorEPetExistentes:
+                value:
+                  tutor_id: 3f1d2c9a-1c7b-4a2e-9a10-5f2b8d7c6e41
+                  pet_id: b51f3f9e-9a5a-4f8f-8c8e-6c1d0a9b2c73
+                  profissional_id: 7a2c1e5f-0b8d-4c3a-9f21-8e6d5b4a3c2d
+                  tipo_servico: consulta
+                  data_hora_inicio: '2026-10-20T09:00:00Z'
+                  duracao_minutos: 30
+                  queixa: Vômitos desde ontem
+                summary: 'Só ids: nada é cadastrado'
+              TutorExistenteEPetNovo:
+                value:
+                  tutor_id: 3f1d2c9a-1c7b-4a2e-9a10-5f2b8d7c6e41
+                  pet:
+                    nome: Mel
+                    especie: Cão
+                    raca: SRD
+                    sexo: F
+                  profissional_id: 7a2c1e5f-0b8d-4c3a-9f21-8e6d5b4a3c2d
+                  tipo_servico: vacina
+                  data_hora_inicio: '2026-10-20T10:00:00Z'
+                summary: Cascata só no pet
+              TutorEPetNovos:
+                value:
+                  tutor:
+                    nome: Joana Reis
+                    telefone: 11 91111-1111
+                  pet:
+                    nome: Rex
+                    especie: Cão
+                    raca: Labrador
+                  profissional_id: 7a2c1e5f-0b8d-4c3a-9f21-8e6d5b4a3c2d
+                  tipo_servico: retorno
+                  data_hora_inicio: '2026-10-21T14:30:00Z'
+                  queixa: Retorno pós-cirurgia
+                  duracao_minutos: 20
+                summary: Cascata completa
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AtendimentoRapidoRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AtendimentoRapidoRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AtendimentoRapidoResponse'
+              examples:
+                AtendimentoCriado(201):
+                  value:
+                    id: 8b1b1e2a-3f4c-4d5e-9a6b-0c1d2e3f4a5b
+                    pet:
+                      id: b51f3f9e-9a5a-4f8f-8c8e-6c1d0a9b2c73
+                      nome: Rex
+                      especie: Cão
+                      raca: Labrador
+                    pet_nome: Rex
+                    tutor:
+                      id: 3f1d2c9a-1c7b-4a2e-9a10-5f2b8d7c6e41
+                      nome: Joana Reis
+                      telefone: 11 91111-1111
+                      cpf: 123.456.789-00
+                    tutor_nome: Joana Reis
+                    profissional_id: 7a2c1e5f-0b8d-4c3a-9f21-8e6d5b4a3c2d
+                    profissional:
+                      id: 7a2c1e5f-0b8d-4c3a-9f21-8e6d5b4a3c2d
+                      nome: Dr. Paulo Lima
+                      cargo: Veterinário
+                    nome_profissional: Dr. Paulo Lima
+                    tipo_servico: retorno
+                    tipo_servico_display: Retorno
+                    queixa: Retorno pós-cirurgia
+                    data_hora_inicio: '2026-10-21T14:30:00Z'
+                    duracao_minutos: 20
+                    status: agendado
+                    observacoes: ''
+                    criado_em: '2026-10-15T12:00:00Z'
+                    atualizado_em: '2026-10-15T12:00:00Z'
+                  summary: Resposta com tutor e pet em resumo
+          description: ''
+  /api/v1/dashboard/:
+    get:
+      operationId: v1_dashboard_retrieve
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/pets/:
+    get:
+      operationId: v1_pets_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPetList'
+          description: ''
+    post:
+      operationId: v1_pets_create
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PetRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PetRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PetRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+          description: ''
+  /api/v1/pets/{id}/:
+    get:
+      operationId: v1_pets_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this pet.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+          description: ''
+    put:
+      operationId: v1_pets_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this pet.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PetRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PetRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PetRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+          description: ''
+    patch:
+      operationId: v1_pets_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this pet.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPetRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedPetRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedPetRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+          description: ''
+    delete:
+      operationId: v1_pets_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this pet.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/profissionais/:
+    get:
+      operationId: v1_profissionais_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProfissionalList'
+          description: ''
+    post:
+      operationId: v1_profissionais_create
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfissionalRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProfissionalRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProfissionalRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profissional'
+          description: ''
+  /api/v1/profissionais/{id}/:
+    get:
+      operationId: v1_profissionais_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this profissional.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profissional'
+          description: ''
+    put:
+      operationId: v1_profissionais_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this profissional.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfissionalRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProfissionalRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProfissionalRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profissional'
+          description: ''
+    patch:
+      operationId: v1_profissionais_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this profissional.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProfissionalRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProfissionalRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProfissionalRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profissional'
+          description: ''
+    delete:
+      operationId: v1_profissionais_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this profissional.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/prontuarios/:
+    get:
+      operationId: v1_prontuarios_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProntuarioList'
+          description: ''
+    post:
+      operationId: v1_prontuarios_create
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProntuarioRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProntuarioRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProntuarioRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prontuario'
+          description: ''
+  /api/v1/prontuarios/{id}/:
+    get:
+      operationId: v1_prontuarios_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this prontuario.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prontuario'
+          description: ''
+    put:
+      operationId: v1_prontuarios_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this prontuario.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProntuarioRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProntuarioRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProntuarioRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prontuario'
+          description: ''
+    patch:
+      operationId: v1_prontuarios_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this prontuario.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProntuarioRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProntuarioRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProntuarioRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prontuario'
+          description: ''
+    delete:
+      operationId: v1_prontuarios_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this prontuario.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/token/:
+    post:
+      operationId: v1_token_create
+      description: Login JWT com rate limit por IP (escopo "login").
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VetTokenObtainPairRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VetTokenObtainPairRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VetTokenObtainPairRequest'
+        required: true
+      responses:
+        '200':
+          description: No response body
+  /api/v1/token/refresh/:
+    post:
+      operationId: v1_token_refresh_create
+      description: Refresh JWT com rate limit por IP (escopo "token_refresh").
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/v1/tutores/:
+    get:
+      operationId: v1_tutores_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTutorComPetsList'
+          description: ''
+    post:
+      operationId: v1_tutores_create
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TutorCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TutorCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TutorCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TutorCreate'
+          description: ''
+  /api/v1/tutores/{id}/:
+    get:
+      operationId: v1_tutores_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this tutor.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TutorComPets'
+          description: ''
+    put:
+      operationId: v1_tutores_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this tutor.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TutorRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TutorRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TutorRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tutor'
+          description: ''
+    patch:
+      operationId: v1_tutores_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this tutor.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTutorRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTutorRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTutorRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tutor'
+          description: ''
+    delete:
+      operationId: v1_tutores_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this tutor.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/vacinas/:
+    get:
+      operationId: v1_vacinas_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedVacinaList'
+          description: ''
+    post:
+      operationId: v1_vacinas_create
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VacinaRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VacinaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VacinaRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacina'
+          description: ''
+  /api/v1/vacinas/{id}/:
+    get:
+      operationId: v1_vacinas_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this vacina.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacina'
+          description: ''
+    put:
+      operationId: v1_vacinas_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this vacina.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VacinaRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VacinaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VacinaRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacina'
+          description: ''
+    patch:
+      operationId: v1_vacinas_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this vacina.
+        required: true
+      tags:
+      - v1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedVacinaRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedVacinaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedVacinaRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacina'
+          description: ''
+    delete:
+      operationId: v1_vacinas_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this vacina.
+        required: true
+      tags:
+      - v1
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+components:
+  schemas:
+    Atendimento:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        pet:
+          type: string
+          format: uuid
+        pet_nome:
+          type: string
+          readOnly: true
+        tutor:
+          type: string
+          format: uuid
+          readOnly: true
+        tutor_nome:
+          type: string
+          readOnly: true
+        profissional_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: ID do profissional cadastrado (preferencial).
+        profissional:
+          allOf:
+          - $ref: '#/components/schemas/ProfissionalResumo'
+          readOnly: true
+        nome_profissional:
+          type: string
+          maxLength: 100
+        tipo_servico:
+          $ref: '#/components/schemas/TipoServicoEnum'
+        tipo_servico_display:
+          type: string
+          readOnly: true
+        queixa:
+          type: string
+          maxLength: 255
+        data_hora_inicio:
+          type: string
+          format: date-time
+        duracao_minutos:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        observacoes:
+          type: string
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        atualizado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - atualizado_em
+      - criado_em
+      - data_hora_inicio
+      - id
+      - pet
+      - pet_nome
+      - profissional
+      - tipo_servico
+      - tipo_servico_display
+      - tutor
+      - tutor_nome
+    AtendimentoRapidoRequest:
+      type: object
+      description: |-
+        POST /api/v1/atendimentos/rapido/: use tutor_id/pet_id para registros
+        já existentes ou tutor/pet (dicts) para cadastrá-los em cascata — nunca
+        os dois ao mesmo tempo. Para o profissional, envie profissional_id
+        (preferencial) ou nome_profissional (legado) — pelo menos um dos dois.
+        Depois, os dados do próprio atendimento.
+      properties:
+        tutor_id:
+          type: string
+          format: uuid
+        tutor:
+          $ref: '#/components/schemas/TutorCreateRequest'
+        pet_id:
+          type: string
+          format: uuid
+        pet:
+          $ref: '#/components/schemas/PetCreateRequest'
+        profissional_id:
+          type: string
+          format: uuid
+          description: ID do profissional cadastrado (preferencial).
+        nome_profissional:
+          type: string
+          description: 'Legado: aceito quando não vier profissional_id.'
+          maxLength: 100
+        tipo_servico:
+          $ref: '#/components/schemas/TipoServicoEnum'
+        queixa:
+          type: string
+        data_hora_inicio:
+          type: string
+          format: date-time
+        duracao_minutos:
+          type: integer
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        observacoes:
+          type: string
+      required:
+      - data_hora_inicio
+      - tipo_servico
+    AtendimentoRapidoResponse:
+      type: object
+      description: 'Resposta do atendimento rápido: tutor e pet aninhados em resumo.'
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        pet:
+          allOf:
+          - $ref: '#/components/schemas/PetResumo'
+          readOnly: true
+        pet_nome:
+          type: string
+          readOnly: true
+        tutor:
+          allOf:
+          - $ref: '#/components/schemas/TutorResumo'
+          readOnly: true
+        tutor_nome:
+          type: string
+          readOnly: true
+        profissional_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: ID do profissional cadastrado (preferencial).
+        profissional:
+          allOf:
+          - $ref: '#/components/schemas/ProfissionalResumo'
+          readOnly: true
+        nome_profissional:
+          type: string
+          maxLength: 100
+        tipo_servico:
+          $ref: '#/components/schemas/TipoServicoEnum'
+        tipo_servico_display:
+          type: string
+          readOnly: true
+        queixa:
+          type: string
+          maxLength: 255
+        data_hora_inicio:
+          type: string
+          format: date-time
+        duracao_minutos:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        observacoes:
+          type: string
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        atualizado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - atualizado_em
+      - criado_em
+      - data_hora_inicio
+      - id
+      - pet
+      - pet_nome
+      - profissional
+      - tipo_servico
+      - tipo_servico_display
+      - tutor
+      - tutor_nome
+    AtendimentoRequest:
+      type: object
+      properties:
+        pet:
+          type: string
+          format: uuid
+        profissional_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: ID do profissional cadastrado (preferencial).
+        nome_profissional:
+          type: string
+          maxLength: 100
+        tipo_servico:
+          $ref: '#/components/schemas/TipoServicoEnum'
+        queixa:
+          type: string
+          maxLength: 255
+        data_hora_inicio:
+          type: string
+          format: date-time
+        duracao_minutos:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        observacoes:
+          type: string
+      required:
+      - data_hora_inicio
+      - pet
+      - tipo_servico
+    BlankEnum:
+      enum:
+      - ''
+    CargoEnum:
+      enum:
+      - Veterinário
+      - tosador
+      - banhista
+      - Outro
+      type: string
+      description: |-
+        * `Veterinário` - Veterinário
+        * `tosador` - Tosador
+        * `banhista` - Banhista
+        * `Outro` - Outro
+    PaginatedAtendimentoList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Atendimento'
+    PaginatedPetList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Pet'
+    PaginatedProfissionalList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Profissional'
+    PaginatedProntuarioList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Prontuario'
+    PaginatedTutorComPetsList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TutorComPets'
+    PaginatedVacinaList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vacina'
+    PatchedAtendimentoRequest:
+      type: object
+      properties:
+        pet:
+          type: string
+          format: uuid
+        profissional_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: ID do profissional cadastrado (preferencial).
+        nome_profissional:
+          type: string
+          maxLength: 100
+        tipo_servico:
+          $ref: '#/components/schemas/TipoServicoEnum'
+        queixa:
+          type: string
+          maxLength: 255
+        data_hora_inicio:
+          type: string
+          format: date-time
+        duracao_minutos:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        observacoes:
+          type: string
+    PatchedPetRequest:
+      type: object
+      properties:
+        tutor:
+          type: string
+          format: uuid
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 100
+        especie:
+          type: string
+          minLength: 1
+          maxLength: 50
+        raca:
+          type: string
+          maxLength: 50
+        sexo:
+          oneOf:
+          - $ref: '#/components/schemas/SexoEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        cor:
+          type: string
+          maxLength: 50
+        vermifugado:
+          type: boolean
+        castrado:
+          type: boolean
+        data_nascimento:
+          type: string
+          format: date
+          nullable: true
+        observacoes:
+          type: string
+    PatchedProfissionalRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 150
+        cargo:
+          $ref: '#/components/schemas/CargoEnum'
+        telefone:
+          type: string
+          maxLength: 20
+        ativo:
+          type: boolean
+    PatchedProntuarioRequest:
+      type: object
+      properties:
+        atendimento:
+          type: string
+          format: uuid
+          nullable: true
+        pet:
+          type: string
+          format: uuid
+        veterinario:
+          type: string
+          format: uuid
+        data_consulta:
+          type: string
+          format: date-time
+        peso:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          nullable: true
+        temperatura:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,1})?$
+          nullable: true
+        diagnostico:
+          type: string
+        observacoes:
+          type: string
+        prescricao:
+          type: string
+        retorno_recomendado:
+          type: string
+          format: date-time
+          nullable: true
+    PatchedTutorRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 150
+        telefone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
+        cpf:
+          type: string
+          maxLength: 14
+        endereco:
+          type: string
+          maxLength: 255
+    PatchedVacinaRequest:
+      type: object
+      properties:
+        pet:
+          type: string
+          format: uuid
+        prontuario:
+          type: string
+          format: uuid
+          nullable: true
+        nome_vacina:
+          type: string
+          minLength: 1
+          maxLength: 100
+        data_aplicacao:
+          type: string
+          format: date
+        data_retorno:
+          type: string
+          format: date
+          nullable: true
+        observacoes:
+          type: string
+    Pet:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        tutor:
+          type: string
+          format: uuid
+        tutor_nome:
+          type: string
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 100
+        especie:
+          type: string
+          maxLength: 50
+        raca:
+          type: string
+          maxLength: 50
+        sexo:
+          oneOf:
+          - $ref: '#/components/schemas/SexoEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        cor:
+          type: string
+          maxLength: 50
+        vermifugado:
+          type: boolean
+        castrado:
+          type: boolean
+        data_nascimento:
+          type: string
+          format: date
+          nullable: true
+        observacoes:
+          type: string
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        atualizado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - atualizado_em
+      - criado_em
+      - especie
+      - id
+      - nome
+      - tutor
+      - tutor_nome
+    PetCreate:
+      type: object
+      description: |-
+        Pet sem tutor no payload: a FK é preenchida pelo service na cascata
+        (tutor+pet num POST) e no atendimento rápido.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 100
+        especie:
+          type: string
+          maxLength: 50
+        raca:
+          type: string
+          maxLength: 50
+        sexo:
+          oneOf:
+          - $ref: '#/components/schemas/SexoEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        cor:
+          type: string
+          maxLength: 50
+        vermifugado:
+          type: boolean
+        castrado:
+          type: boolean
+        data_nascimento:
+          type: string
+          format: date
+          nullable: true
+        observacoes:
+          type: string
+      required:
+      - especie
+      - id
+      - nome
+    PetCreateRequest:
+      type: object
+      description: |-
+        Pet sem tutor no payload: a FK é preenchida pelo service na cascata
+        (tutor+pet num POST) e no atendimento rápido.
+      properties:
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 100
+        especie:
+          type: string
+          minLength: 1
+          maxLength: 50
+        raca:
+          type: string
+          maxLength: 50
+        sexo:
+          oneOf:
+          - $ref: '#/components/schemas/SexoEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        cor:
+          type: string
+          maxLength: 50
+        vermifugado:
+          type: boolean
+        castrado:
+          type: boolean
+        data_nascimento:
+          type: string
+          format: date
+          nullable: true
+        observacoes:
+          type: string
+      required:
+      - especie
+      - nome
+    PetRequest:
+      type: object
+      properties:
+        tutor:
+          type: string
+          format: uuid
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 100
+        especie:
+          type: string
+          minLength: 1
+          maxLength: 50
+        raca:
+          type: string
+          maxLength: 50
+        sexo:
+          oneOf:
+          - $ref: '#/components/schemas/SexoEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        cor:
+          type: string
+          maxLength: 50
+        vermifugado:
+          type: boolean
+        castrado:
+          type: boolean
+        data_nascimento:
+          type: string
+          format: date
+          nullable: true
+        observacoes:
+          type: string
+      required:
+      - especie
+      - nome
+      - tutor
+    PetResumo:
+      type: object
+      description: Resumo usado para aninhar pets no tutor (busca rápida).
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 100
+        especie:
+          type: string
+          maxLength: 50
+        raca:
+          type: string
+          maxLength: 50
+      required:
+      - especie
+      - id
+      - nome
+    Profissional:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 150
+        cargo:
+          $ref: '#/components/schemas/CargoEnum'
+        telefone:
+          type: string
+          maxLength: 20
+        ativo:
+          type: boolean
+        veterinario:
+          allOf:
+          - $ref: '#/components/schemas/Veterinario'
+          readOnly: true
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        atualizado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - atualizado_em
+      - cargo
+      - criado_em
+      - id
+      - nome
+      - veterinario
+    ProfissionalRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 150
+        cargo:
+          $ref: '#/components/schemas/CargoEnum'
+        telefone:
+          type: string
+          maxLength: 20
+        ativo:
+          type: boolean
+      required:
+      - cargo
+      - nome
+    ProfissionalResumo:
+      type: object
+      description: Resumo do profissional para respostas de atendimento.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 150
+        cargo:
+          $ref: '#/components/schemas/CargoEnum'
+      required:
+      - cargo
+      - id
+      - nome
+    ProfissionalResumoRequest:
+      type: object
+      description: Resumo do profissional para respostas de atendimento.
+      properties:
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 150
+        cargo:
+          $ref: '#/components/schemas/CargoEnum'
+      required:
+      - cargo
+      - nome
+    Prontuario:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        atendimento:
+          type: string
+          format: uuid
+          nullable: true
+        pet:
+          type: string
+          format: uuid
+        pet_nome:
+          type: string
+          readOnly: true
+        veterinario:
+          type: string
+          format: uuid
+        veterinario_nome:
+          type: string
+          readOnly: true
+        data_consulta:
+          type: string
+          format: date-time
+        peso:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          nullable: true
+        temperatura:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,1})?$
+          nullable: true
+        diagnostico:
+          type: string
+        observacoes:
+          type: string
+        prescricao:
+          type: string
+        retorno_recomendado:
+          type: string
+          format: date-time
+          nullable: true
+        vacinas:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vacina'
+          readOnly: true
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        atualizado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - atualizado_em
+      - criado_em
+      - data_consulta
+      - id
+      - pet
+      - pet_nome
+      - vacinas
+      - veterinario
+      - veterinario_nome
+    ProntuarioRequest:
+      type: object
+      properties:
+        atendimento:
+          type: string
+          format: uuid
+          nullable: true
+        pet:
+          type: string
+          format: uuid
+        veterinario:
+          type: string
+          format: uuid
+        data_consulta:
+          type: string
+          format: date-time
+        peso:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          nullable: true
+        temperatura:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,1})?$
+          nullable: true
+        diagnostico:
+          type: string
+        observacoes:
+          type: string
+        prescricao:
+          type: string
+        retorno_recomendado:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - data_consulta
+      - pet
+      - veterinario
+    SexoEnum:
+      enum:
+      - M
+      - F
+      type: string
+      description: |-
+        * `M` - Macho
+        * `F` - Fêmea
+    StatusEnum:
+      enum:
+      - agendado
+      - confirmado
+      - realizado
+      - cancelado
+      - faltou
+      type: string
+      description: |-
+        * `agendado` - Agendado
+        * `confirmado` - Confirmado
+        * `realizado` - Realizado
+        * `cancelado` - Cancelado
+        * `faltou` - Faltou
+    TipoServicoEnum:
+      enum:
+      - consulta
+      - retorno
+      - vacina
+      - banho
+      - tosa
+      - banho_e_tosa
+      - banho_e_tosa_higienica
+      type: string
+      description: |-
+        * `consulta` - Consulta
+        * `retorno` - Retorno
+        * `vacina` - Vacina
+        * `banho` - Banho
+        * `tosa` - Tosa
+        * `banho_e_tosa` - Banho e Tosa
+        * `banho_e_tosa_higienica` - Banho e Tosa Higiênica
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+    TokenRefreshRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
+    Tutor:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 150
+        telefone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
+        cpf:
+          type: string
+          maxLength: 14
+        endereco:
+          type: string
+          maxLength: 255
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        atualizado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - atualizado_em
+      - criado_em
+      - id
+      - nome
+      - telefone
+    TutorComPets:
+      type: object
+      description: Tutor com os pets aninhados (busca rápida da recepção).
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 150
+        telefone:
+          type: string
+          maxLength: 20
+        cpf:
+          type: string
+          maxLength: 14
+        pets:
+          type: array
+          items:
+            $ref: '#/components/schemas/PetResumo'
+          readOnly: true
+      required:
+      - id
+      - nome
+      - pets
+      - telefone
+    TutorCreate:
+      type: object
+      description: |-
+        POST /api/v1/tutores/: aceita o payload legado (sem pets) e o novo
+        com "pets" aninhado (lista opcional). A criação em cascata acontece no
+        service, dentro de transaction.atomic.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 150
+        telefone:
+          type: string
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
+        cpf:
+          type: string
+          maxLength: 14
+        endereco:
+          type: string
+          maxLength: 255
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        atualizado_em:
+          type: string
+          format: date-time
+          readOnly: true
+        pets:
+          type: array
+          items:
+            $ref: '#/components/schemas/PetCreate'
+      required:
+      - atualizado_em
+      - criado_em
+      - id
+      - nome
+      - telefone
+    TutorCreateRequest:
+      type: object
+      description: |-
+        POST /api/v1/tutores/: aceita o payload legado (sem pets) e o novo
+        com "pets" aninhado (lista opcional). A criação em cascata acontece no
+        service, dentro de transaction.atomic.
+      properties:
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 150
+        telefone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
+        cpf:
+          type: string
+          maxLength: 14
+        endereco:
+          type: string
+          maxLength: 255
+        pets:
+          type: array
+          items:
+            $ref: '#/components/schemas/PetCreateRequest'
+      required:
+      - nome
+      - telefone
+    TutorRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+          minLength: 1
+          maxLength: 150
+        telefone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        email:
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
+        cpf:
+          type: string
+          maxLength: 14
+        endereco:
+          type: string
+          maxLength: 255
+      required:
+      - nome
+      - telefone
+    TutorResumo:
+      type: object
+      description: Resumo do tutor para respostas de atendimento (fluxo rápido).
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        nome:
+          type: string
+          maxLength: 150
+        telefone:
+          type: string
+          maxLength: 20
+        cpf:
+          type: string
+          maxLength: 14
+      required:
+      - id
+      - nome
+      - telefone
+    Vacina:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        pet:
+          type: string
+          format: uuid
+        prontuario:
+          type: string
+          format: uuid
+          nullable: true
+        nome_vacina:
+          type: string
+          maxLength: 100
+        data_aplicacao:
+          type: string
+          format: date
+        data_retorno:
+          type: string
+          format: date
+          nullable: true
+        observacoes:
+          type: string
+        criado_em:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - criado_em
+      - data_aplicacao
+      - id
+      - nome_vacina
+      - pet
+    VacinaRequest:
+      type: object
+      properties:
+        pet:
+          type: string
+          format: uuid
+        prontuario:
+          type: string
+          format: uuid
+          nullable: true
+        nome_vacina:
+          type: string
+          minLength: 1
+          maxLength: 100
+        data_aplicacao:
+          type: string
+          format: date
+        data_retorno:
+          type: string
+          format: date
+          nullable: true
+        observacoes:
+          type: string
+      required:
+      - data_aplicacao
+      - nome_vacina
+      - pet
+    VetTokenObtainPairRequest:
+      type: object
+      description: Inclui username e grupos (perfis) no token e na resposta do login.
+      properties:
+        username:
+          type: string
+          writeOnly: true
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - password
+      - username
+    Veterinario:
+      type: object
+      properties:
+        crmv:
+          type: string
+          maxLength: 20
+        especialidade:
+          type: string
+          maxLength: 100
+      required:
+      - crmv
+    VeterinarioRequest:
+      type: object
+      properties:
+        crmv:
+          type: string
+          minLength: 1
+          maxLength: 20
+        especialidade:
+          type: string
+          maxLength: 100
+      required:
+      - crmv
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -161,41 +161,47 @@ make reset-db        # Apaga e recria o banco ⚠️
 
 ### Autenticação
 ```
-POST   /api/token/           # Obter token JWT
-POST   /api/token/refresh/   # Renovar token
+POST   /api/v1/token/           # Obter token JWT
+POST   /api/v1/token/refresh/   # Renovar token
 ```
 
 ### Tutores
 ```
-GET    /api/tutores/         # Listar tutores
-POST   /api/tutores/         # Criar tutor
-GET    /api/tutores/{id}/    # Detalhe do tutor
-PUT    /api/tutores/{id}/    # Atualizar tutor
-DELETE /api/tutores/{id}/    # Remover tutor
+GET    /api/v1/tutores/         # Listar tutores (inclui pets aninhados na lista/retrieve)
+POST   /api/v1/tutores/         # Criar tutor com pets (cascata) em 1 chamada
+GET    /api/v1/tutores/{id}/    # Detalhe do tutor + pets
+PUT    /api/v1/tutores/{id}/    # Atualizar tutor
+PATCH  /api/v1/tutores/{id}/    # Atualizar parcial
+DELETE /api/v1/tutores/{id}/    # Remover tutor
 ```
 
 ### Pets
 ```
-GET    /api/pets/            # Listar pets
-POST   /api/pets/            # Cadastrar pet
-GET    /api/pets/{id}/       # Detalhe do pet
-PUT    /api/pets/{id}/       # Atualizar pet
+GET    /api/v1/pets/            # Listar pets
+POST   /api/v1/pets/            # Cadastrar pet
+GET    /api/v1/pets/{id}/       # Detalhe do pet
+PUT    /api/v1/pets/{id}/       # Atualizar pet
+PATCH  /api/v1/pets/{id}/       # Atualizar parcial
+DELETE /api/v1/pets/{id}/       # Remover pet
 ```
 
 ### Atendimentos
 ```
-GET    /api/atendimentos/           # Listar atendimentos
-POST   /api/atendimentos/           # Agendar atendimento
-GET    /api/atendimentos/{id}/      # Detalhe do atendimento
-PUT    /api/atendimentos/{id}/      # Atualizar atendimento
-GET    /api/agenda/disponivel/      # Horários disponíveis
+GET    /api/v1/atendimentos/           # Listar atendimentos
+POST   /api/v1/atendimentos/           # Agendar atendimento (legado + novo: aceita profissional_id)
+GET    /api/v1/atendimentos/{id}/      # Detalhe do atendimento
+PUT    /api/v1/atendimentos/{id}/      # Atualizar atendimento
+PATCH  /api/v1/atendimentos/{id}/      # Atualizar parcial
+DELETE /api/v1/atendimentos/{id}/      # Remover atendimento
+POST   /api/v1/atendimentos/rapido/     # Criar tutor+pet+atendimento em 1 chamada
 ```
 
 ### Outros
 ```
-GET    /api/dashboard/                     # Visão geral
-GET    /api/relatorios/faturamento/        # Relatório financeiro
-GET    /api/prontuario/{pet_id}/           # Histórico do pet
+GET    /api/v1/dashboard/                     # Visão geral
+GET    /api/v1/profissionais/                # Profissionais
+GET    /api/v1/prontuarios/                  # Prontuários
+GET    /api/v1/vacinas/                      # Vacinas
 ```
 
 > Documentação completa e interativa disponível no Swagger em `/api/schema/swagger-ui/`
