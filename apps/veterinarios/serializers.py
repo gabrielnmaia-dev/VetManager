@@ -25,3 +25,11 @@ class ProfissionalSerializer(serializers.ModelSerializer):
         ]
         
         read_only_fields = ["id", "criado_em", "atualizado_em"]
+
+
+class ProfissionalResumoSerializer(serializers.ModelSerializer):
+    """Resumo do profissional para respostas de atendimento."""
+
+    class Meta:
+        model = Profissional
+        fields = ["id", "nome", "cargo"]

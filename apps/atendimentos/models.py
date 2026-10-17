@@ -26,7 +26,18 @@ class Atendimento(BaseModel):
 
     pet = models.ForeignKey(Pet, on_delete=models.PROTECT, related_name="atendimentos")
 
-    # Por enquanto simples, vira FK pra Profissional depois.
+    # Fonte de verdade desde a Fase 4. Nullable até a migração de dados
+    # casar os nomes antigos com Profissional (ver 0005).
+    profissional = models.ForeignKey(
+        "veterinarios.Profissional",
+        on_delete=models.PROTECT,
+        related_name="atendimentos",
+        null=True,
+        blank=True,
+    )
+
+    # Legado: espelho do nome do profissional para os leitores antigos.
+    # Quando existe FK, o service mantém este campo igual a profissional.nome.
     nome_profissional = models.CharField(max_length=100)
 
     tipo_servico = models.CharField(max_length=60, choices=TipoServico.choices)
