@@ -57,7 +57,7 @@ services:
     ports:
       # Segurança: publica o Nginx SOMENTE no IP do Tailscale (BIND_ADDR).
       # Nunca use 0.0.0.0 — assim a API fica acessível apenas pela tailnet/LAN.
-      - "${BIND_ADDR:-127.0.0.1}:80:80"
+      - "${BIND_ADDR:-127.0.0.1}:8000:80"
     volumes:
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - static_data:/app/staticfiles:ro
