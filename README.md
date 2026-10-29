@@ -208,6 +208,28 @@ GET    /api/v1/vacinas/                      # Vacinas
 
 ---
 
+## 👥 Perfis e grupos (RBAC)
+
+O acesso é controlado por grupos do Django. Eles são criados automaticamente
+pela migration `accounts.0001_grupos_padrao` e podem ser garantidos a qualquer
+momento com:
+
+```bash
+python manage.py setup_inicial   # ou: make prod-setup
+```
+
+| Grupo | Acesso |
+|---|---|
+| `admin` | total (superusuários também) |
+| `veterinario` | agenda, tutores, pets, prontuários e vacinas |
+| `recepcao` | agenda, tutores e pets; **sem acesso a prontuários** |
+
+No `/admin`, associe cada usuário ao grupo correspondente em
+*Usuários › grupos*. Os nomes precisam ser exatamente `admin`, `veterinario`
+ou `recepcao` — são os mesmos devolvidos no claim `groups` do JWT.
+
+---
+
 ## 🗂️ Estrutura do projeto
 
 ```

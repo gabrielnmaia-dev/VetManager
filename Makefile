@@ -1,6 +1,8 @@
 .PHONY: build up down restart logs migrate migrations createsuperuser shell test \
 	lint format psql reset-db prod-build prod-up prod-down prod-logs prod-migrate \
-	prod-superuser
+	prod-superuser prod-setup
+
+
 
 build:
 	docker compose build
@@ -62,3 +64,6 @@ prod-migrate:
 
 prod-superuser:
 	docker compose -f docker-compose.prod.yml exec web python manage.py createsuperuser
+
+prod-setup:
+	docker compose -f docker-compose.prod.yml exec web python manage.py setup_inicial
