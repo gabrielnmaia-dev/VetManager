@@ -1,6 +1,6 @@
 .PHONY: build up down restart logs migrate migrations createsuperuser shell test \
 	lint format psql reset-db prod-build prod-up prod-down prod-logs prod-migrate \
-	prod-superuser prod-setup
+	prod-superuser prod-setup prod-backup prod-restore
 
 
 
@@ -44,6 +44,9 @@ psql:
 	docker compose exec db psql -U vetmanager_user -d vetmanager
 
 reset-db:
+	@echo "ATENÇÃO: este alvo APAGA todos os dados do ambiente de DESENVOLVIMENTO"
+	@echo "(projeto 'vetmanager-dev'). A produção ('vetmanager') NÃO é afetada."
+	@printf "Digite 'APAGAR' para continuar: " && read ans && [ "$$ans" = "APAGAR" ] || (echo "abortado"; exit 1)
 	docker compose down -v && docker compose up -d db
 
 # ---- Produção (docker-compose.prod.yml) ----
@@ -67,3 +70,13 @@ prod-superuser:
 
 prod-setup:
 	docker compose -f docker-compose.prod.yml exec web python manage.py setup_inicial
+
+# Backup manual do banco de produção (também roda diariamente via cron).
+prod-backup:
+	./deploy/backup_db.sh
+
+# Restaura um dump no banco de produção. PERIGOSO: sobrescreve os dados atuais.
+# Uso: make prod-restore FILE=backups/vetmanager_AAAAMMDD_HHMMSS.sql.gz
+prod-restore:
+	@test -n "$(FILE)" || (echo "informe FILE=backups/arquivo.sql.gz"; exit 1)
+	./deploy/restore_db.sh "$(FILE)"
