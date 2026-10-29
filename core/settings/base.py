@@ -129,6 +129,7 @@ REST_FRAMEWORK = {
         'user_sustained': os.environ.get('THROTTLE_USER_SUSTAINED', '3000/hour'),
         'login': os.environ.get('THROTTLE_LOGIN', '5/min'),
         'token_refresh': os.environ.get('THROTTLE_TOKEN_REFRESH', '30/min'),
+        'alterar_senha': os.environ.get('THROTTLE_ALTERAR_SENHA', '5/min'),
     },
     # Quantidade de proxies reversos confiáveis à frente do Django.
     # Usado para descobrir o IP real do cliente via X-Forwarded-For

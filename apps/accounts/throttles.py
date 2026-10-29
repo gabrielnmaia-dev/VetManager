@@ -26,3 +26,9 @@ class LoginRateThrottle(_IPRateThrottle):
 
 class TokenRefreshRateThrottle(_IPRateThrottle):
     scope = "token_refresh"
+
+
+class AlterarSenhaRateThrottle(UserRateThrottle):
+    """Limite por usuário para troca de senha (evita força bruta da senha atual)."""
+
+    scope = "alterar_senha"
