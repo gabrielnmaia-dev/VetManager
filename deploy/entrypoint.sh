@@ -8,25 +8,10 @@ python manage.py migrate --noinput
 echo ">> Coletando arquivos estáticos..."
 python manage.py collectstatic --noinput
 
-# Cria o superusuário automaticamente (mesma lógica do build.sh do Render).
-if [ -n "$DJANGO_SUPERUSER_USERNAME" ] && [ -n "$DJANGO_SUPERUSER_PASSWORD" ]; then
-  echo ">> Verificando superusuário '$DJANGO_SUPERUSER_USERNAME'..."
-  python manage.py shell -c "
-import os
-from django.contrib.auth import get_user_model
-User = get_user_model()
-username = os.environ['DJANGO_SUPERUSER_USERNAME']
-if not User.objects.filter(username=username).exists():
-    User.objects.create_superuser(
-        username,
-        os.environ.get('DJANGO_SUPERUSER_EMAIL', ''),
-        os.environ['DJANGO_SUPERUSER_PASSWORD'],
-    )
-    print('Superusuário criado:', username)
-else:
-    print('Superusuário já existe:', username)
-"
-fi
+# Garante os grupos padrão (admin, veterinario, recepcao) e cria os usuários
+# iniciais definidos no ambiente (mesma lógica do build.sh do Render).
+echo ">> Garantindo grupos e usuários iniciais..."
+python manage.py setup_inicial
 
 # Executa o comando passado no `command:` do docker-compose (Gunicorn).
 exec "$@"
