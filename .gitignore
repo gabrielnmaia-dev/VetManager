@@ -10,3 +10,6 @@ test_db.sqlite3
 .vscode/
 .idea/
 postgres_data/
+backups/
+*.sql.gz
+*.pre-fix.*

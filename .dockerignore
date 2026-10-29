@@ -16,3 +16,7 @@ staticfiles
 postgres_data
 .vscode
 .idea
+
+# Dumps de banco (montados em runtime, nunca na imagem)
+backups
+*.sql.gz
