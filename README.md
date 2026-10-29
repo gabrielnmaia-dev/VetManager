@@ -42,6 +42,7 @@ O **VetManager** nasceu da necessidade real de uma clínica veterinária de orga
 - ✅ Financeiro básico com relatório de faturamento diário/mensal
 - ✅ Dashboard com visão geral da agenda
 - ✅ Autenticação JWT
+- ✅ Perfil do usuário e troca de senha pelo app (exige a senha atual)
 - ✅ Documentação automática via Swagger
 
 ### Fase 2 (em planejamento)
@@ -152,7 +153,7 @@ make format          # Formata o código (black + isort)
 # Banco de dados
 make psql            # Acessa o PostgreSQL
 make backup          # Gera dump do banco
-make reset-db        # Apaga e recria o banco ⚠️
+make reset-db        # Apaga e recria o banco de DEV (pede confirmação) ⚠️
 ```
 
 ---
@@ -163,6 +164,29 @@ make reset-db        # Apaga e recria o banco ⚠️
 ```
 POST   /api/v1/token/           # Obter token JWT
 POST   /api/v1/token/refresh/   # Renovar token
+```
+
+### Perfil (usuário logado)
+```
+GET    /api/v1/perfil/                 # Dados do próprio usuário (nome, e-mail, grupos)
+PUT    /api/v1/perfil/                 # Atualizar nome, sobrenome e e-mail
+PATCH  /api/v1/perfil/                 # Atualizar parcialmente
+POST   /api/v1/perfil/alterar-senha/   # Trocar a senha (exige a senha atual)
+```
+
+- `username`, grupos e permissões são **somente leitura** (geridos no `/admin`).
+- A troca de senha envia `senha_atual`, `nova_senha` e `confirmar_nova_senha`,
+  valida a nova senha pelos `AUTH_PASSWORD_VALIDATORS` (mínimo de 10 caracteres)
+  e recusa senha atual incorreta, senhas diferentes ou nova igual à atual.
+- Ao trocar a senha, os **refresh tokens antigos são revogados** (outros
+  dispositivos precisam logar de novo) e a resposta traz um novo par
+  `access`/`refresh`, que o app deve passar a usar.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/perfil/alterar-senha/ \
+  -H "Authorization: Bearer <access>" \
+  -H "Content-Type: application/json" \
+  -d '{"senha_atual":"senha-antiga-123","nova_senha":"senha-nova-456","confirmar_nova_senha":"senha-nova-456"}'
 ```
 
 ### Tutores

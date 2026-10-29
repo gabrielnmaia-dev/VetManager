@@ -1,5 +1,6 @@
 from rest_framework.routers import DefaultRouter
 from django.urls import path
+from apps.accounts.views import AlterarSenhaView, PerfilView
 from apps.tutores.views import TutorViewSet
 from apps.pets.views import PetViewSet
 from apps.atendimentos.views import AtendimentoViewSet
@@ -17,4 +18,10 @@ router.register("vacinas", VacinaViewSet, basename="vacina")
 
 urlpatterns = router.urls + [
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
+    path("perfil/", PerfilView.as_view(), name="perfil"),
+    path(
+        "perfil/alterar-senha/",
+        AlterarSenhaView.as_view(),
+        name="perfil-alterar-senha",
+    ),
 ]

@@ -425,6 +425,124 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/v1/perfil/:
+    get:
+      operationId: v1_perfil_retrieve
+      description: 'Retorna o perfil do usuário dono do token: username, nome, e-mail,
+        grupos (perfis) e permissões.'
+      summary: Dados do usuário logado
+      tags:
+      - Perfil
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfil'
+          description: ''
+    put:
+      operationId: v1_perfil_update
+      description: Atualiza apenas `first_name`, `last_name` e `email`. `username`,
+        grupos e permissões são somente leitura (geridos no /admin).
+      summary: Atualizar o próprio perfil
+      tags:
+      - Perfil
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PerfilRequest'
+            examples:
+              Exemplo:
+                value:
+                  first_name: Ana
+                  last_name: Souza
+                  email: ana@vetmanager.local
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PerfilRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PerfilRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfil'
+          description: ''
+    patch:
+      operationId: v1_perfil_partial_update
+      description: |-
+        Perfil do usuário autenticado.
+
+        GET   /api/v1/perfil/  -> dados do próprio usuário
+        PATCH /api/v1/perfil/  -> atualiza nome, sobrenome e e-mail
+      summary: Atualizar parcialmente o próprio perfil
+      tags:
+      - Perfil
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPerfilRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedPerfilRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedPerfilRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfil'
+          description: ''
+  /api/v1/perfil/alterar-senha/:
+    post:
+      operationId: v1_perfil_alterar_senha_create
+      description: Exige a senha atual. A nova senha passa pelos validadores do Django
+        (AUTH_PASSWORD_VALIDATORS). Ao concluir, os refresh tokens anteriores são
+        revogados e um novo par `access`/`refresh` é retornado — o app deve substituir
+        os tokens que já guarda. Os outros dispositivos precisarão fazer login de
+        novo.
+      summary: Alterar a própria senha
+      tags:
+      - Perfil
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlterarSenhaRequest'
+            examples:
+              Exemplo:
+                value:
+                  senha_atual: senha-antiga-123
+                  nova_senha: senha-nova-456
+                  confirmar_nova_senha: senha-nova-456
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AlterarSenhaRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AlterarSenhaRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlterarSenhaResponse'
+          description: ''
   /api/v1/pets/:
     get:
       operationId: v1_pets_list
@@ -1249,6 +1367,44 @@ paths:
           description: No response body
 components:
   schemas:
+    AlterarSenhaRequest:
+      type: object
+      description: |-
+        Troca de senha do próprio usuário (exige a senha atual).
+
+        A nova senha passa pelos mesmos validadores do Django configurados em
+        AUTH_PASSWORD_VALIDATORS (tamanho mínimo, senha comum, etc.).
+      properties:
+        senha_atual:
+          type: string
+          writeOnly: true
+          minLength: 1
+        nova_senha:
+          type: string
+          writeOnly: true
+          minLength: 1
+        confirmar_nova_senha:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - confirmar_nova_senha
+      - nova_senha
+      - senha_atual
+    AlterarSenhaResponse:
+      type: object
+      description: 'Resposta da troca de senha: mensagem + par de tokens novo.'
+      properties:
+        detail:
+          type: string
+        access:
+          type: string
+        refresh:
+          type: string
+      required:
+      - access
+      - detail
+      - refresh
     Atendimento:
       type: object
       properties:
@@ -1294,8 +1450,9 @@ components:
           format: date-time
         duracao_minutos:
           type: integer
-          maximum: 2147483647
+          maximum: 9223372036854775807
           minimum: 0
+          format: int64
         status:
           $ref: '#/components/schemas/StatusEnum'
         observacoes:
@@ -1411,8 +1568,9 @@ components:
           format: date-time
         duracao_minutos:
           type: integer
-          maximum: 2147483647
+          maximum: 9223372036854775807
           minimum: 0
+          format: int64
         status:
           $ref: '#/components/schemas/StatusEnum'
         observacoes:
@@ -1461,8 +1619,9 @@ components:
           format: date-time
         duracao_minutos:
           type: integer
-          maximum: 2147483647
+          maximum: 9223372036854775807
           minimum: 0
+          format: int64
         status:
           $ref: '#/components/schemas/StatusEnum'
         observacoes:
@@ -1648,12 +1807,35 @@ components:
           format: date-time
         duracao_minutos:
           type: integer
-          maximum: 2147483647
+          maximum: 9223372036854775807
           minimum: 0
+          format: int64
         status:
           $ref: '#/components/schemas/StatusEnum'
         observacoes:
           type: string
+    PatchedPerfilRequest:
+      type: object
+      description: |-
+        Dados do próprio usuário logado (GET/PUT/PATCH /api/v1/perfil/).
+
+        Somente nome, sobrenome e e-mail são editáveis. `username`, grupos e
+        permissões são somente leitura: quem administra isso é o /admin.
+      properties:
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        email:
+          title: Email address
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
     PatchedPetRequest:
       type: object
       properties:
@@ -1785,6 +1967,91 @@ components:
           nullable: true
         observacoes:
           type: string
+    Perfil:
+      type: object
+      description: |-
+        Dados do próprio usuário logado (GET/PUT/PATCH /api/v1/perfil/).
+
+        Somente nome, sobrenome e e-mail são editáveis. `username`, grupos e
+        permissões são somente leitura: quem administra isso é o /admin.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          readOnly: true
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        email:
+          title: Email address
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
+        groups:
+          type: array
+          items:
+            type: string
+          readOnly: true
+        is_staff:
+          type: boolean
+          readOnly: true
+          title: Staff status
+          description: Designates whether the user can log into this admin site.
+        is_superuser:
+          type: boolean
+          readOnly: true
+          title: Superuser status
+          description: Designates that this user has all permissions without explicitly
+            assigning them.
+        last_login:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        date_joined:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - date_joined
+      - groups
+      - id
+      - is_staff
+      - is_superuser
+      - last_login
+      - username
+    PerfilRequest:
+      type: object
+      description: |-
+        Dados do próprio usuário logado (GET/PUT/PATCH /api/v1/perfil/).
+
+        Somente nome, sobrenome e e-mail são editáveis. `username`, grupos e
+        permissões são somente leitura: quem administra isso é o /admin.
+      properties:
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        email:
+          title: Email address
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
     Pet:
       type: object
       properties:

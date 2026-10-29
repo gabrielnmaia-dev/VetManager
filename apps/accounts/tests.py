@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.cache import cache
 from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -105,3 +106,174 @@ class ProntuarioPermissaoTests(TestCase):
         self.criar_usuario("sem-grupo")
         response = self.client.get(URL_PRONTUARIOS)
         self.assertEqual(response.status_code, 403)
+
+
+URL_PERFIL = "/api/v1/perfil/"
+URL_ALTERAR_SENHA = "/api/v1/perfil/alterar-senha/"
+
+SENHA_ATUAL = "senha-super-secreta-123"
+SENHA_NOVA = "senha-nova-super-456"
+
+
+class PerfilTests(TestCase):
+    """GET/PATCH do próprio perfil (nome, e-mail) e campos protegidos."""
+
+    def setUp(self):
+        cache.clear()  # evita throttling acumulado entre testes
+        self.user = User.objects.create_user(
+            username="atendente",
+            password=SENHA_ATUAL,
+            first_name="Ana",
+            last_name="Souza",
+            email="ana@vetmanager.local",
+        )
+        self.user.groups.add(Group.objects.get(name="recepcao"))
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def test_exige_autenticacao(self):
+        self.assertEqual(APIClient().get(URL_PERFIL).status_code, 401)
+
+    def test_get_devolve_dados_do_usuario_logado(self):
+        response = self.client.get(URL_PERFIL)
+
+        self.assertEqual(response.status_code, 200)
+        dados = response.json()
+        self.assertEqual(dados["username"], "atendente")
+        self.assertEqual(dados["first_name"], "Ana")
+        self.assertEqual(dados["groups"], ["recepcao"])
+        self.assertNotIn("password", dados)
+
+    def test_patch_atualiza_nome_e_email(self):
+        response = self.client.patch(
+            URL_PERFIL,
+            {"first_name": "Marina", "email": "marina@vetmanager.local"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.first_name, "Marina")
+        self.assertEqual(self.user.last_name, "Souza")
+        self.assertEqual(self.user.email, "marina@vetmanager.local")
+
+    def test_patch_ignora_campos_protegidos(self):
+        response = self.client.patch(
+            URL_PERFIL,
+            {
+                "username": "outro-usuario",
+                "is_staff": True,
+                "is_superuser": True,
+                "groups": ["admin"],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, "atendente")
+        self.assertFalse(self.user.is_staff)
+        self.assertFalse(self.user.is_superuser)
+        self.assertEqual(
+            list(self.user.groups.values_list("name", flat=True)), ["recepcao"]
+        )
+
+
+class AlterarSenhaTests(TestCase):
+    """Troca de senha exige a senha atual e revoga os tokens antigos."""
+
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user(
+            username="atendente", password=SENHA_ATUAL
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def alterar(self, senha_atual=SENHA_ATUAL, nova=SENHA_NOVA, confirmar=None):
+        return self.client.post(
+            URL_ALTERAR_SENHA,
+            {
+                "senha_atual": senha_atual,
+                "nova_senha": nova,
+                "confirmar_nova_senha": nova if confirmar is None else confirmar,
+            },
+            format="json",
+        )
+
+    def test_exige_autenticacao(self):
+        response = APIClient().post(URL_ALTERAR_SENHA, {}, format="json")
+        self.assertEqual(response.status_code, 401)
+
+    def test_senha_atual_incorreta_nao_altera(self):
+        response = self.alterar(senha_atual="senha-errada-000")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("senha_atual", response.json())
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(SENHA_ATUAL))
+
+    def test_confirmacao_diferente_nao_altera(self):
+        response = self.alterar(confirmar="outra-senha-qualquer-789")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("confirmar_nova_senha", response.json())
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(SENHA_ATUAL))
+
+    def test_senha_fraca_e_rejeitada_pelos_validadores(self):
+        response = self.alterar(nova="123456", confirmar="123456")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("nova_senha", response.json())
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(SENHA_ATUAL))
+
+    def test_nova_senha_igual_a_atual_e_rejeitada(self):
+        response = self.alterar(nova=SENHA_ATUAL)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("nova_senha", response.json())
+
+    def test_altera_senha_e_revoga_refresh_token_antigo(self):
+        login = APIClient().post(
+            "/api/v1/token/",
+            {"username": "atendente", "password": SENHA_ATUAL},
+            format="json",
+        )
+        self.assertEqual(login.status_code, 200)
+        refresh_antigo = login.json()["refresh"]
+
+        response = self.alterar()
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(SENHA_NOVA))
+        self.assertFalse(self.user.check_password(SENHA_ATUAL))
+
+        # O refresh emitido antes da troca deixa de valer...
+        antigo = APIClient().post(
+            "/api/v1/token/refresh/", {"refresh": refresh_antigo}, format="json"
+        )
+        self.assertEqual(antigo.status_code, 401)
+
+        # ...e o par devolvido na resposta funciona.
+        dados = response.json()
+        self.assertIn("access", dados)
+        self.assertIn("refresh", dados)
+        novo = APIClient().post(
+            "/api/v1/token/refresh/", {"refresh": dados["refresh"]}, format="json"
+        )
+        self.assertEqual(novo.status_code, 200)
+
+    def test_login_com_a_nova_senha(self):
+        self.assertEqual(self.alterar().status_code, 200)
+
+        response = APIClient().post(
+            "/api/v1/token/",
+            {"username": "atendente", "password": SENHA_NOVA},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
