@@ -32,3 +32,9 @@ class AlterarSenhaRateThrottle(UserRateThrottle):
     """Limite por usuário para troca de senha (evita força bruta da senha atual)."""
 
     scope = "alterar_senha"
+
+
+class TokenLogoutRateThrottle(_IPRateThrottle):
+    """Limite por IP para logout (evita abuso/invalidação de sessões em massa)."""
+
+    scope = "token_logout"
