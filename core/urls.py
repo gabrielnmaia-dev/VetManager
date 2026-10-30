@@ -17,8 +17,11 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
-from apps.accounts.views import VetTokenObtainPairView as TokenObtainPairView
-from apps.accounts.views import VetTokenRefreshView as TokenRefreshView
+from apps.accounts.views import (
+    TokenLogoutView,
+    VetTokenObtainPairView as TokenObtainPairView,
+    VetTokenRefreshView as TokenRefreshView,
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -32,4 +35,5 @@ urlpatterns = [
     path('api/v1/', include('api.v1.router')),
     path('api/v1/token/', TokenObtainPairView.as_view()),
     path('api/v1/token/refresh/', TokenRefreshView.as_view()),
+    path('api/v1/token/logout/', TokenLogoutView.as_view()),
 ]

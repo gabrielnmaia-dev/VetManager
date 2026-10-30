@@ -100,7 +100,7 @@ LOGIN_LOCKOUT = {
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'apps.accounts.authentication.JWTCookieAuthentication',
     ),
     # RBAC: views que declaram `role_policy` exigem os grupos indicados
     # (ver apps/accounts/permissions.py). Sem `role_policy`, basta estar logado.
@@ -129,6 +129,7 @@ REST_FRAMEWORK = {
         'user_sustained': os.environ.get('THROTTLE_USER_SUSTAINED', '3000/hour'),
         'login': os.environ.get('THROTTLE_LOGIN', '5/min'),
         'token_refresh': os.environ.get('THROTTLE_TOKEN_REFRESH', '30/min'),
+        'token_logout': os.environ.get('THROTTLE_TOKEN_LOGOUT', '20/min'),
         'alterar_senha': os.environ.get('THROTTLE_ALTERAR_SENHA', '5/min'),
     },
     # Quantidade de proxies reversos confiáveis à frente do Django.
@@ -259,7 +260,10 @@ else:
     }
 
 
-CORS_ALLOW_ALL_ORIGINS = True
+# Origem do frontend (Vite dev server por padrão em http://localhost:5173).
+# Quando CORS_ALLOW_CREDENTIALS=True, NÃO se pode usar CORS_ALLOW_ALL_ORIGINS.
+_FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+CORS_ALLOWED_ORIGINS = [o.strip() for o in _FRONTEND_URL.split(",") if o.strip()]
 
 CORS_ALLOW_HEADERS = [
     "accept",
@@ -270,6 +274,23 @@ CORS_ALLOW_HEADERS = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+# Cookies de sessão/CSRF (Django) e JWT (customizados, abaixo).
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = "Lax"
+
+# JWT em cookies httpOnly (cross-origin frontend <-> backend).
+# SameSite=None é exigido para cookies cross-origin; Secure é exigido pelo
+# SameSite=None. Em localhost o navegador aceita Secure cookies mesmo sem HTTPS.
+JWT_ACCESS_COOKIE_NAME = "access"
+JWT_REFRESH_COOKIE_NAME = "refresh"
+# Secure=True + SameSite=None é exigido para cookies cross-origin.
+# Em localhost o navegador aceita Secure cookies mesmo sem HTTPS (exceção de dev).
+JWT_COOKIE_SECURE = env_bool("JWT_COOKIE_SECURE", True)
+JWT_COOKIE_SAMESITE = os.environ.get("JWT_COOKIE_SAMESITE", "None")
+JWT_COOKIE_PATH = "/"
 
 
 LOGGING = {

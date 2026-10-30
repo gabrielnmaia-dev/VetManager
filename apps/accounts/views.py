@@ -1,3 +1,4 @@
+from django.conf import settings
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework import status
 from rest_framework.generics import RetrieveUpdateAPIView
@@ -8,6 +9,7 @@ from rest_framework_simplejwt.token_blacklist.models import (
     BlacklistedToken,
     OutstandingToken,
 )
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .serializers import (
@@ -19,20 +21,97 @@ from .serializers import (
 from .throttles import (
     AlterarSenhaRateThrottle,
     LoginRateThrottle,
+    TokenLogoutRateThrottle,
     TokenRefreshRateThrottle,
 )
 
 
+def _set_jwt_cookies(response, access_token, refresh_token=None):
+    """Define os tokens JWT em cookies httpOnly (inacessíveis via JS)."""
+    response.set_cookie(
+        settings.JWT_ACCESS_COOKIE_NAME,
+        access_token,
+        httponly=True,
+        secure=settings.JWT_COOKIE_SECURE,
+        samesite=settings.JWT_COOKIE_SAMESITE,
+        path=settings.JWT_COOKIE_PATH,
+    )
+    if refresh_token is not None:
+        response.set_cookie(
+            settings.JWT_REFRESH_COOKIE_NAME,
+            refresh_token,
+            httponly=True,
+            secure=settings.JWT_COOKIE_SECURE,
+            samesite=settings.JWT_COOKIE_SAMESITE,
+            path=settings.JWT_COOKIE_PATH,
+        )
+
+
+def _clear_jwt_cookies(response):
+    """Remove os cookies httpOnly de JWT (logout)."""
+    response.delete_cookie(settings.JWT_ACCESS_COOKIE_NAME, path=settings.JWT_COOKIE_PATH)
+    response.delete_cookie(settings.JWT_REFRESH_COOKIE_NAME, path=settings.JWT_COOKIE_PATH)
+
+
 class VetTokenObtainPairView(TokenObtainPairView):
-    """Login JWT com rate limit por IP (escopo "login")."""
+    """Login JWT com rate limit por IP (escopo "login").
+
+    Emite os tokens em cookies httpOnly `access` e `refresh` (Set-Cookie)
+    para que o navegador os armazene sem expô-los a XSS.
+    """
 
     throttle_classes = [LoginRateThrottle]
 
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        access = response.data.get("access")
+        refresh = response.data.get("refresh")
+        if access:
+            _set_jwt_cookies(response, access, refresh)
+        return response
+
 
 class VetTokenRefreshView(TokenRefreshView):
-    """Refresh JWT com rate limit por IP (escopo "token_refresh")."""
+    """Refresh JWT com rate limit por IP (escopo "token_refresh").
+
+    Lê o refresh token do cookie httpOnly (se não vier no body) e emite um
+    novo access (e refresh, com rotação) em cookies httpOnly.
+    """
 
     throttle_classes = [TokenRefreshRateThrottle]
+
+    def post(self, request, *args, **kwargs):
+        # Se o cliente não enviar o refresh no body, tenta ler do cookie httpOnly.
+        if "refresh" not in request.data:
+            request.data["refresh"] = request.COOKIES.get(
+                settings.JWT_REFRESH_COOKIE_NAME, ""
+            )
+        response = super().post(request, *args, **kwargs)
+        access = response.data.get("access")
+        refresh = response.data.get("refresh")
+        if access:
+            _set_jwt_cookies(response, access, refresh)
+        return response
+
+
+class TokenLogoutView(APIView):
+    """Logout: blacklista o refresh token e limpa os cookies httpOnly."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [TokenLogoutRateThrottle]
+
+    def post(self, request, *args, **kwargs):
+        refresh = request.COOKIES.get(settings.JWT_REFRESH_COOKIE_NAME)
+        if refresh:
+            try:
+                token = RefreshToken(refresh)
+                token.blacklist()
+            except Exception:
+                # Token inválido ou já blacklistado — prossegue com a limpeza.
+                pass
+        response = Response({"detail": "Logout realizado com sucesso."})
+        _clear_jwt_cookies(response)
+        return response
 
 
 class PerfilView(RetrieveUpdateAPIView):
@@ -137,12 +216,16 @@ class AlterarSenhaView(APIView):
 
         # Emite um par novo (com os mesmos claims do login) para o app atual.
         novo_refresh = VetTokenObtainPairSerializer.get_token(user)
+        access = str(novo_refresh.access_token)
+        refresh = str(novo_refresh)
 
-        return Response(
+        response = Response(
             {
                 "detail": "Senha alterada com sucesso.",
-                "access": str(novo_refresh.access_token),
-                "refresh": str(novo_refresh),
+                "access": access,
+                "refresh": refresh,
             },
             status=status.HTTP_200_OK,
         )
+        _set_jwt_cookies(response, access, refresh)
+        return response
