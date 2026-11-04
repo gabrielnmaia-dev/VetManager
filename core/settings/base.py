@@ -285,18 +285,17 @@ SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SAMESITE = "Lax"
 
-# JWT em cookies httpOnly (cross-origin frontend <-> backend).
-# SameSite=None é exigido para cookies cross-origin; Secure é exigido pelo
-# SameSite=None. Em localhost o navegador aceita Secure cookies mesmo sem HTTPS.
+# JWT em cookies httpOnly.
+# Com o proxy /api do Netlify (ou o nginx servindo o front no mesmo domínio),
+# os cookies são first-party e SameSite=Lax funciona no Safari/Chrome do
+# celular. Use JWT_COOKIE_SAMESITE=None apenas se o front chamar a API
+# diretamente em outro domínio (cross-site).
 JWT_ACCESS_COOKIE_NAME = "access"
 JWT_REFRESH_COOKIE_NAME = "refresh"
-# Secure=True + SameSite=None é exigido para cookies cross-origin.
-# Em localhost o navegador aceita Secure cookies mesmo sem HTTPS (exceção de dev).
+# Secure=True é o padrão de produção; em localhost o navegador aceita cookies
+# Secure mesmo sem HTTPS (exceção de dev).
 JWT_COOKIE_SECURE = env_bool("JWT_COOKIE_SECURE", True)
-# Com o front servido pelo próprio nginx (mesmo domínio da API) os cookies são
-# first-party e funcionam no Safari/Chrome do celular. "None" continua aceito
-# para o front no Netlify (cross-site) e não atrapalha o mesmo domínio.
-JWT_COOKIE_SAMESITE = os.environ.get("JWT_COOKIE_SAMESITE", "None")
+JWT_COOKIE_SAMESITE = os.environ.get("JWT_COOKIE_SAMESITE", "Lax")
 # Deixe vazio para cookie host-only (recomendado). Só preencha se precisar
 # compartilhar entre subdomínios (ex.: ".seudominio.com").
 JWT_COOKIE_DOMAIN = os.environ.get("JWT_COOKIE_DOMAIN") or None

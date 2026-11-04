@@ -254,6 +254,33 @@ ou `recepcao` — são os mesmos devolvidos no claim `groups` do JWT.
 
 ---
 
+## 🌐 Deploy (Netlify + Tailscale Funnel)
+
+Arquitetura: navegador → Netlify (`/api/*` como proxy) → Tailscale Funnel →
+nginx → gunicorn. O navegador enxerga front e API na **mesma origem**
+(`*.netlify.app`), então os cookies httpOnly de JWT são first-party e
+funcionam no Safari/Chrome do celular.
+
+- **Front (`vetmaneger-front`)**: `netlify.toml` redireciona `/api/*` para
+  `https://serverubunto.tail459c47.ts.net/api/:splat` antes do fallback do SPA.
+  O build usa `VITE_API_URL=/api/v1` (caminho relativo). Se houver uma
+  `VITE_API_URL` com a URL completa do Funnel no painel do Netlify, apague-a
+  ou troque para `/api/v1`.
+- **Backend**: `core/settings/prod.py` adiciona o host do Funnel em
+  `ALLOWED_HOSTS` e as origens do Netlify/Funnel em `CSRF_TRUSTED_ORIGINS`.
+  Os cookies JWT usam `SameSite=Lax` (`JWT_COOKIE_SAMESITE`).
+- **HTTPS**: o Funnel termina o TLS e repassa `X-Forwarded-Proto: https`
+  (`SECURE_PROXY_SSL_HEADER`), mantendo `USE_HTTPS=True` no `.env.prod`.
+
+Teste rápido (de fora da tailnet):
+
+```bash
+curl -i https://serverubunto.tail459c47.ts.net/api/v1/   # 401 = API viva
+curl -i https://vetmanager-letvet.netlify.app/api/v1/    # 401 = proxy OK
+```
+
+---
+
 ## 🗂️ Estrutura do projeto
 
 ```

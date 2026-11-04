@@ -16,15 +16,35 @@ if not os.environ.get("DATABASE_URL"):
     raise ImproperlyConfigured("DATABASE_URL não definida no ambiente de produção.")
 
 # --- Hosts / domínios -------------------------------------------------
+# Domínio público do Tailscale Funnel (o proxy do Netlify encaminha para ele).
+# Pode ser sobrescrito por FUNNEL_HOST no .env.prod se o domínio mudar.
+FUNNEL_HOST = os.environ.get("FUNNEL_HOST", "serverubunto.tail459c47.ts.net")
+# Origem do front no Netlify (usada no CSRF e liberada no CORS mais abaixo).
+NETLIFY_ORIGIN = os.environ.get(
+    "NETLIFY_ORIGIN", "https://vetmanager-letvet.netlify.app"
+)
+
 # ALLOWED_HOSTS = lista separada por vírgula (ex.: "1.2.3.4,meuapp.com").
 # Mantém compatibilidade com RENDER_EXTERNAL_HOSTNAME caso volte ao Render.
+# Os defaults abaixo garantem que o Funnel continue funcionando mesmo que a
+# variável no .env.prod esteja incompleta. O host do Netlify entra também
+# porque alguns proxies preservam o Host original em vez do host de destino.
 _hosts = os.environ.get("ALLOWED_HOSTS") or os.environ.get(
     "RENDER_EXTERNAL_HOSTNAME", ""
 )
-ALLOWED_HOSTS = [h.strip() for h in _hosts.split(",") if h.strip()]
+_netlify_host = NETLIFY_ORIGIN.split("://", 1)[-1].split("/", 1)[0]
+ALLOWED_HOSTS = sorted(
+    {h.strip() for h in _hosts.split(",") if h.strip()}
+    | {"localhost", "127.0.0.1", FUNNEL_HOST, _netlify_host}
+)
 
-# Necessário para login no /admin via HTTPS atrás de proxy (Nginx/Tailscale).
-CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
+# Necessário para login no /admin via HTTPS atrás de proxy (Nginx/Tailscale)
+# e para o front no Netlify. Com o proxy /api do Netlify o navegador enxerga
+# tudo como mesma origem, mas manter ambas as origens não atrapalha.
+CSRF_TRUSTED_ORIGINS = sorted(
+    set(env_list("CSRF_TRUSTED_ORIGINS"))
+    | {NETLIFY_ORIGIN, f"https://{FUNNEL_HOST}"}
+)
 
 # --- Arquivos estáticos ----------------------------------------------
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
@@ -70,7 +90,10 @@ if not os.environ.get("REDIS_URL"):
     )
 
 # --- CORS (frontend no Netlify) ---------------------------------------
-_default_frontend = "https://vetmanager-letvet.netlify.app"
+# Com o proxy /api do Netlify as chamadas viram same-origin e CORS deixa de
+# ser necessário; mantemos a origem liberada para clientes que chamem a API
+# diretamente pelo domínio do Funnel.
+_default_frontend = NETLIFY_ORIGIN
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
     o.strip()
