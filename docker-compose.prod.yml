@@ -67,6 +67,9 @@ services:
       - "${BIND_ADDR:-127.0.0.1}:8000:80"
     volumes:
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Build do frontend (Vite). Servir o SPA no mesmo domínio da API evita
+      # cookies de terceiros no celular. Gere com: npm run build e copie dist/.
+      - ./frontend_dist:/usr/share/nginx/html:ro
       - static_data:/app/staticfiles:ro
       - media_data:/app/media:ro
     depends_on:

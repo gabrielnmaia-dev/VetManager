@@ -26,31 +26,61 @@ from .throttles import (
 )
 
 
+def _cookie_kwargs():
+    """Atributos comuns dos cookies JWT (usados no set e no delete)."""
+    return {
+        "httponly": True,
+        "secure": settings.JWT_COOKIE_SECURE,
+        "samesite": settings.JWT_COOKIE_SAMESITE,
+        "domain": getattr(settings, "JWT_COOKIE_DOMAIN", None),
+        "path": settings.JWT_COOKIE_PATH,
+    }
+
+
+def _max_age(delta):
+    """Converte timedelta em segundos (None se não for timedelta)."""
+    try:
+        return int(delta.total_seconds())
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
 def _set_jwt_cookies(response, access_token, refresh_token=None):
-    """Define os tokens JWT em cookies httpOnly (inacessíveis via JS)."""
+    """Define os tokens JWT em cookies httpOnly (inacessíveis via JS).
+
+    Usa Max-Age para o cookie sobreviver ao fechamento do navegador no
+    celular (cookies de sessão são descartados com mais frequência no iOS).
+    """
+    kwargs = _cookie_kwargs()
     response.set_cookie(
         settings.JWT_ACCESS_COOKIE_NAME,
         access_token,
-        httponly=True,
-        secure=settings.JWT_COOKIE_SECURE,
-        samesite=settings.JWT_COOKIE_SAMESITE,
-        path=settings.JWT_COOKIE_PATH,
+        max_age=_max_age(settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"]),
+        **kwargs,
     )
     if refresh_token is not None:
         response.set_cookie(
             settings.JWT_REFRESH_COOKIE_NAME,
             refresh_token,
-            httponly=True,
-            secure=settings.JWT_COOKIE_SECURE,
-            samesite=settings.JWT_COOKIE_SAMESITE,
-            path=settings.JWT_COOKIE_PATH,
+            max_age=_max_age(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"]),
+            **kwargs,
         )
 
 
 def _clear_jwt_cookies(response):
-    """Remove os cookies httpOnly de JWT (logout)."""
-    response.delete_cookie(settings.JWT_ACCESS_COOKIE_NAME, path=settings.JWT_COOKIE_PATH)
-    response.delete_cookie(settings.JWT_REFRESH_COOKIE_NAME, path=settings.JWT_COOKIE_PATH)
+    """Remove os cookies httpOnly de JWT (logout).
+
+    Repete path/domain/samesite do Set-Cookie (identidade do cookie);
+    sem isso alguns navegadores mantêm o cookie antigo no lugar.
+    """
+    # delete_cookie() nao aceita httponly/secure: esses atributos nao fazem
+    # parte da identidade do cookie (que e nome + domain + path). Removê-los
+    # evita TypeError no logout; path/domain/samesite continuam iguais ao Set.
+    kwargs = _cookie_kwargs()
+    kwargs.pop("httponly", None)
+    kwargs.pop("secure", None)
+    response.delete_cookie(settings.JWT_ACCESS_COOKIE_NAME, **kwargs)
+    response.delete_cookie(settings.JWT_REFRESH_COOKIE_NAME, **kwargs)
 
 
 class VetTokenObtainPairView(TokenObtainPairView):
@@ -68,6 +98,7 @@ class VetTokenObtainPairView(TokenObtainPairView):
         refresh = response.data.get("refresh")
         if access:
             _set_jwt_cookies(response, access, refresh)
+        response["Cache-Control"] = "no-store"
         return response
 
 
@@ -82,15 +113,26 @@ class VetTokenRefreshView(TokenRefreshView):
 
     def post(self, request, *args, **kwargs):
         # Se o cliente não enviar o refresh no body, tenta ler do cookie httpOnly.
-        if "refresh" not in request.data:
-            request.data["refresh"] = request.COOKIES.get(
+        # request.data pode ser imutável (QueryDict de formulário), então
+        # copiamos antes de injetar o cookie em vez de mutar o original.
+        if not request.data.get("refresh"):
+            refresh_cookie = request.COOKIES.get(
                 settings.JWT_REFRESH_COOKIE_NAME, ""
             )
+            if refresh_cookie:
+                dados = (
+                    request.data.copy()
+                    if hasattr(request.data, "copy")
+                    else dict(request.data)
+                )
+                dados["refresh"] = refresh_cookie
+                request._full_data = dados
         response = super().post(request, *args, **kwargs)
         access = response.data.get("access")
         refresh = response.data.get("refresh")
         if access:
             _set_jwt_cookies(response, access, refresh)
+        response["Cache-Control"] = "no-store"
         return response
 
 
@@ -228,4 +270,5 @@ class AlterarSenhaView(APIView):
             status=status.HTTP_200_OK,
         )
         _set_jwt_cookies(response, access, refresh)
+        response["Cache-Control"] = "no-store"
         return response

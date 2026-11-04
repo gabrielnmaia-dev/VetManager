@@ -20,3 +20,6 @@ postgres_data
 # Dumps de banco (montados em runtime, nunca na imagem)
 backups
 *.sql.gz
+
+# Build do frontend (montado no nginx em runtime)
+frontend_dist

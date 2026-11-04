@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Proxy da API: precisa vir ANTES do fallback do SPA
+[[redirects]]
+  from = "/api/*"
+  to = "https://serverubunto.tail459c47.ts.net/api/:splat"
+  status = 200
+  force = true
+
+# Fallback do SPA (React Router etc.)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

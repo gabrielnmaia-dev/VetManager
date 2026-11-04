@@ -90,7 +90,11 @@ LOGIN_LOCKOUT = {
     # Falhas permitidas por usuário+IP dentro da janela.
     'MAX_ATTEMPTS': env_int('LOGIN_MAX_ATTEMPTS', 5),
     # Falhas permitidas por IP (qualquer usuário) — evita "password spraying".
-    'IP_MAX_ATTEMPTS': env_int('LOGIN_IP_MAX_ATTEMPTS', 20),
+    # Atrás do Tailscale Funnel/nginx todos os clientes chegam com o MESMO IP
+    # (o do proxy), então este limite é global. Mantenha alto para não
+    # bloquear a clínica inteira por causa de erros de digitação; a proteção
+    # real contra força bruta é o limite por usuário acima.
+    'IP_MAX_ATTEMPTS': env_int('LOGIN_IP_MAX_ATTEMPTS', 200),
     # Janela de contagem das falhas (segundos).
     'WINDOW_SECONDS': env_int('LOGIN_WINDOW_SECONDS', 15 * 60),
     # Tempo de bloqueio após exceder o limite (segundos).
@@ -127,7 +131,7 @@ REST_FRAMEWORK = {
         'anon': os.environ.get('THROTTLE_ANON', '30/min'),
         'user_burst': os.environ.get('THROTTLE_USER_BURST', '120/min'),
         'user_sustained': os.environ.get('THROTTLE_USER_SUSTAINED', '3000/hour'),
-        'login': os.environ.get('THROTTLE_LOGIN', '5/min'),
+        'login': os.environ.get('THROTTLE_LOGIN', '10/min'),
         'token_refresh': os.environ.get('THROTTLE_TOKEN_REFRESH', '30/min'),
         'token_logout': os.environ.get('THROTTLE_TOKEN_LOGOUT', '20/min'),
         'alterar_senha': os.environ.get('THROTTLE_ALTERAR_SENHA', '5/min'),
@@ -289,7 +293,13 @@ JWT_REFRESH_COOKIE_NAME = "refresh"
 # Secure=True + SameSite=None é exigido para cookies cross-origin.
 # Em localhost o navegador aceita Secure cookies mesmo sem HTTPS (exceção de dev).
 JWT_COOKIE_SECURE = env_bool("JWT_COOKIE_SECURE", True)
+# Com o front servido pelo próprio nginx (mesmo domínio da API) os cookies são
+# first-party e funcionam no Safari/Chrome do celular. "None" continua aceito
+# para o front no Netlify (cross-site) e não atrapalha o mesmo domínio.
 JWT_COOKIE_SAMESITE = os.environ.get("JWT_COOKIE_SAMESITE", "None")
+# Deixe vazio para cookie host-only (recomendado). Só preencha se precisar
+# compartilhar entre subdomínios (ex.: ".seudominio.com").
+JWT_COOKIE_DOMAIN = os.environ.get("JWT_COOKIE_DOMAIN") or None
 JWT_COOKIE_PATH = "/"
 
 
