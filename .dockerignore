@@ -1,0 +1,25 @@
+# Segredos: NUNCA copiar para a imagem (são injetados via env_file).
+.env
+.env.*
+!.env.example
+!.env.prod.example
+
+# Ambiente local / lixo
+.git
+.venv
+venv
+__pycache__
+*.pyc
+db.sqlite3
+media
+staticfiles
+postgres_data
+.vscode
+.idea
+
+# Dumps de banco (montados em runtime, nunca na imagem)
+backups
+*.sql.gz
+
+# Build do frontend (montado no nginx em runtime)
+frontend_dist
