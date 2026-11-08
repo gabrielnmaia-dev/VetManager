@@ -29,6 +29,7 @@ CAMPOS_ATENDIMENTO = (
     "duracao_minutos",
     "status",
     "observacoes",
+    "taxidog",
 )
 
 
