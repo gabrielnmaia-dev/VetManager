@@ -167,6 +167,9 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    # Dados operacionais da API nunca devem ser cacheados pelo navegador,
+    # por proxy ou pelo service worker do PWA.
+    'core.middleware.ApiNoStoreMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
