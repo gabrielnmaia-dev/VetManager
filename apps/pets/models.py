@@ -22,6 +22,7 @@ class Pet(BaseModel):
     castrado = models.BooleanField(default=False)
     vermifugado = models.BooleanField(default=False)
     data_nascimento = models.DateField(null=True, blank=True)
+    idade = models.IntegerField(null=True, blank=True)
     observacoes = models.TextField(blank=True)
 
     criado_em = models.DateTimeField(auto_now_add=True)

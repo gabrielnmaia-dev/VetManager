@@ -4,6 +4,14 @@ from .models import Pet
 
 class PetSerializer(serializers.ModelSerializer):
     tutor_nome = serializers.CharField(source="tutor.nome", read_only=True)
+    data_nascimento = serializers.DateField(
+        required=False,
+        allow_null=True,
+    )
+    idade = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = Pet
@@ -19,6 +27,7 @@ class PetSerializer(serializers.ModelSerializer):
             "vermifugado",
             "castrado",
             "data_nascimento",
+            "idade",
             "observacoes",
             "criado_em",
             "atualizado_em",
@@ -52,6 +61,10 @@ class PetCreateSerializer(serializers.ModelSerializer):
             "blank": "Informe a espécie do pet.",
         },
     )
+    idade = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = Pet
@@ -65,6 +78,7 @@ class PetCreateSerializer(serializers.ModelSerializer):
             "vermifugado",
             "castrado",
             "data_nascimento",
+            "idade",
             "observacoes",
         ]
         read_only_fields = ["id"]

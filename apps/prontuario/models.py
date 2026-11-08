@@ -20,6 +20,8 @@ class Prontuario(BaseModel):
     )
     
     data_consulta = models.DateTimeField()
+    data_nascimento = models.DateField(null=True, blank=True)
+    idade = models.IntegerField(null=True, blank=True)
     peso = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     temperatura = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True)
     diagnostico = models.TextField(blank=True)

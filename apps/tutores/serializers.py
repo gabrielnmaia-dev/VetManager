@@ -29,7 +29,17 @@ class TutorComPetsSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tutor
-        fields = ["id", "nome", "telefone", "cpf", "pets"]
+        fields = [
+            "id",
+            "nome",
+            "telefone",
+            "email",
+            "cpf",
+            "endereco",
+            "pets",
+            "criado_em",
+            "atualizado_em",
+        ]
 
 
 class TutorCreateSerializer(serializers.ModelSerializer):

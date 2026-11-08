@@ -35,6 +35,8 @@ class ProntuarioSerializer(serializers.ModelSerializer):
             "veterinario",
             "veterinario_nome",
             "data_consulta",
+            "data_nascimento",
+            "idade",
             "peso",
             "temperatura",
             "diagnostico",
