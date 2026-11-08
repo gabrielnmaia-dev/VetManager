@@ -60,6 +60,13 @@ class AtendimentoSerializer(serializers.ModelSerializer):
     nome_profissional = serializers.CharField(
         max_length=100, required=False, allow_blank=True
     )
+    # TáxiDog: marca se o pet precisa ser buscado em casa.
+    # O BooleanField vem do próprio model (required=False, default do model);
+    # não declarar default aqui para não sobrescrever o valor em PUT sem o campo.
+    # Telefone e endereço do tutor, expostos para não quebrar consumidores
+    # que precisam desses dados na resposta do atendimento.
+    tutor_telefone = serializers.CharField(source="pet.tutor.telefone", read_only=True)
+    tutor_endereco = serializers.CharField(source="pet.tutor.endereco", read_only=True)
 
     class Meta:
         model = Atendimento
@@ -69,6 +76,8 @@ class AtendimentoSerializer(serializers.ModelSerializer):
             "pet_nome",
             "tutor",
             "tutor_nome",
+            "tutor_telefone",
+            "tutor_endereco",
             "profissional_id",
             "profissional",
             "nome_profissional",
@@ -79,6 +88,7 @@ class AtendimentoSerializer(serializers.ModelSerializer):
             "duracao_minutos",
             "status",
             "observacoes",
+            "taxidog",
             "criado_em",
             "atualizado_em",
         ]
@@ -87,6 +97,8 @@ class AtendimentoSerializer(serializers.ModelSerializer):
             "pet_nome",
             "tutor",
             "tutor_nome",
+            "tutor_telefone",
+            "tutor_endereco",
             "tipo_servico_display",
             "criado_em",
             "atualizado_em",
@@ -156,6 +168,7 @@ class AtendimentoRapidoSerializer(serializers.Serializer):
         error_messages={"invalid_choice": "Status inválido."},
     )
     observacoes = serializers.CharField(required=False, allow_blank=True)
+    taxidog = serializers.BooleanField(required=False)
 
     def validate(self, attrs):
         # tutor_id OU tutor: nem os dois, nem nenhum.

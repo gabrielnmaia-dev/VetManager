@@ -51,6 +51,7 @@ class Atendimento(BaseModel):
     )
 
     observacoes = models.TextField(blank=True)
+    taxidog = models.BooleanField(default=False)
 
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)

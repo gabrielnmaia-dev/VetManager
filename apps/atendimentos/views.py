@@ -1,5 +1,6 @@
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
+from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework import status, viewsets, filters
 from rest_framework.decorators import action
@@ -20,7 +21,8 @@ class AtendimentoViewSet(viewsets.ModelViewSet):
         "pet", "pet__tutor", "profissional"
     ).all()
     serializer_class = AtendimentoSerializer
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ["taxidog"]
     search_fields = [
         "pet__nome",
         "pet__tutor__nome",
