@@ -48,6 +48,10 @@ ALLOWED_HOSTS = sorted(
     | {"localhost", "127.0.0.1", FUNNEL_HOST, _netlify_host}
 )
 
+# Permite publicar a API sob um prefixo (ex.: /staging-api) quando o proxy
+# público monta o serviço em um subpath. Vazio/ausente = raiz.
+FORCE_SCRIPT_NAME = os.environ.get("FORCE_SCRIPT_NAME") or None
+
 # Necessário para login no /admin via HTTPS atrás de proxy (Nginx/Tailscale)
 # e para o front no Netlify. Com o proxy /api do Netlify o navegador enxerga
 # tudo como mesma origem, mas manter ambas as origens não atrapalha.
