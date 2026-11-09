@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 from apps.pets.models import Pet
 from apps.veterinarios.models import Veterinario
 from apps.atendimentos.models import Atendimento
@@ -51,7 +52,28 @@ class Vacina(SoftDeleteModel):
     ``updated_by`` vêm de ``SoftDeleteModel``/``AuditFieldsModel`` via campos
     adicionados nesta herança. Não há duplicação de ``created_at``/``updated_at``
     porque ``AuditFieldsModel`` não é usada aqui.
+
+    Os campos de aplicação (lote, fabricante, via, dose, veterinário) foram
+    acrescentados de forma opcional para preservar os registros já existentes,
+    que continuam válidos apenas com nome, datas e observações.
     """
+
+    class ViaAplicacao(models.TextChoices):
+        SUBCUTANEA = "subcutanea", "Subcutânea"
+        INTRAMUSCULAR = "intramuscular", "Intramuscular"
+        INTRANASAL = "intranasal", "Intranasal"
+        ORAL = "oral", "Oral"
+        TOPICA = "topica", "Tópica"
+        OUTRA = "outra", "Outra"
+
+    class Situacao(models.TextChoices):
+        EM_DIA = "em_dia", "Em dia"
+        PROXIMA = "proxima", "Próxima do retorno"
+        ATRASADA = "atrasada", "Atrasada"
+        SEM_RETORNO = "sem_retorno", "Sem data de retorno"
+
+    # Janela usada para sinalizar doses de retorno próximas.
+    DIAS_ALERTA_RETORNO = 30
 
     pet = models.ForeignKey(Pet, on_delete=models.PROTECT, related_name="vacinas")
     prontuario = models.ForeignKey(
@@ -61,9 +83,28 @@ class Vacina(SoftDeleteModel):
         null=True,
         blank=True,
     )
+    veterinario = models.ForeignKey(
+        Veterinario,
+        on_delete=models.PROTECT,
+        related_name="vacinas",
+        null=True,
+        blank=True,
+        verbose_name="veterinário responsável",
+    )
     nome_vacina = models.CharField(max_length=100)
     data_aplicacao = models.DateField()
     data_retorno = models.DateField(null=True, blank=True)
+    lote = models.CharField(max_length=60, blank=True, verbose_name="lote")
+    fabricante = models.CharField(
+        max_length=100, blank=True, verbose_name="fabricante"
+    )
+    via_aplicacao = models.CharField(
+        max_length=20,
+        choices=ViaAplicacao.choices,
+        blank=True,
+        verbose_name="via de aplicação",
+    )
+    dose = models.CharField(max_length=40, blank=True, verbose_name="dose")
     observacoes = models.TextField(blank=True)
 
     criado_em = models.DateTimeField(auto_now_add=True)
@@ -89,10 +130,53 @@ class Vacina(SoftDeleteModel):
     )
 
     class Meta(SoftDeleteModel.Meta):
-        ordering = ["-data_aplicacao"]
+        # ``-id`` garante paginação estável quando duas doses têm a mesma data.
+        ordering = ["-data_aplicacao", "-id"]
 
     def __str__(self):
         return f"{self.nome_vacina} - {self.pet.nome} ({self.data_aplicacao:%d/%m/%Y})"
+
+    @property
+    def dias_para_retorno(self) -> int | None:
+        """Dias entre hoje e o retorno previsto (negativo = atrasado)."""
+        if not self.data_retorno:
+            return None
+        return (self.data_retorno - timezone.localdate()).days
+
+    @property
+    def situacao(self) -> str:
+        """Situação calculada a partir da data de retorno.
+
+        Nunca é persistida: reflete sempre a data atual, sem depender de
+        rotinas de atualização em lote.
+        """
+        dias = self.dias_para_retorno
+        if dias is None:
+            return self.Situacao.SEM_RETORNO
+        if dias < 0:
+            return self.Situacao.ATRASADA
+        if dias <= self.DIAS_ALERTA_RETORNO:
+            return self.Situacao.PROXIMA
+        return self.Situacao.EM_DIA
+
+    def clean(self):
+        """Validações também aplicadas pelo admin do Django."""
+        super().clean()
+        erros = {}
+        if self.data_aplicacao and self.data_aplicacao > timezone.localdate():
+            erros["data_aplicacao"] = "A data de aplicação não pode ser futura."
+        if (
+            self.data_retorno
+            and self.data_aplicacao
+            and self.data_retorno < self.data_aplicacao
+        ):
+            erros["data_retorno"] = (
+                "A data de retorno não pode ser anterior à aplicação."
+            )
+        if erros:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError(erros)
 
     def save(self, *args, user=None, **kwargs):
         """Propaga o usuário autenticado para created_by/updated_by."""
