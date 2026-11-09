@@ -78,6 +78,14 @@ def migrar_dados(apps, schema_editor):
 
         pet.save(using=db_alias, update_fields=["especie_fk", "raca_fk"])
 
+    # Os inserts em Especie/Raca usam FKs adiadas. No PostgreSQL é preciso
+    # liberar os eventos de trigger pendentes antes de alterar essas tabelas
+    # nas operações seguintes da mesma transação.
+    if schema_editor.connection.vendor == "postgresql":
+        with schema_editor.connection.cursor() as cursor:
+            cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+            cursor.execute("SET CONSTRAINTS ALL DEFERRED")
+
 
 def reverter_dados(apps, schema_editor):
     """Reverso: copia os nomes dos catálogos de volta para os campos de texto."""
