@@ -101,6 +101,41 @@ class RBACViewSetTests(TestCase):
         resp = self.client.get("/api/v1/prontuarios/")
         self.assertEqual(resp.status_code, 200)
 
+    # ----- profissionais (leitura para a agenda, gestão só admin) -----
+    def test_recepcao_pode_listar_profissionais(self):
+        """A recepção precisa listar profissionais para agendar."""
+        autenticar(self.client, self.rec)
+        self._grupo(self.client, self.rec, GRUPO_REC)
+        resp = self.client.get("/api/v1/profissionais/")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_veterinario_pode_listar_profissionais(self):
+        autenticar(self.client, self.vet)
+        self._grupo(self.client, self.vet, GRUPO_VET)
+        resp = self.client.get("/api/v1/profissionais/")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_recepcao_nao_pode_criar_profissional(self):
+        """Gestão de profissionais continua restrita ao admin."""
+        autenticar(self.client, self.rec)
+        self._grupo(self.client, self.rec, GRUPO_REC)
+        resp = self.client.post(
+            "/api/v1/profissionais/",
+            {"nome": "Novo Prof", "cargo": "tosador"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_veterinario_nao_pode_criar_profissional(self):
+        autenticar(self.client, self.vet)
+        self._grupo(self.client, self.vet, GRUPO_VET)
+        resp = self.client.post(
+            "/api/v1/profissionais/",
+            {"nome": "Novo Prof", "cargo": "tosador"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 403)
+
     def test_nao_autenticado_negado(self):
         self.client.force_authenticate(user=None)
         resp = self.client.get("/api/v1/tutores/")
