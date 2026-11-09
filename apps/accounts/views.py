@@ -1,8 +1,9 @@
 from django.conf import settings
+from django.middleware.csrf import get_token
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework import status
 from rest_framework.generics import RetrieveUpdateAPIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.token_blacklist.models import (
@@ -93,6 +94,11 @@ class VetTokenObtainPairView(TokenObtainPairView):
     throttle_classes = [LoginRateThrottle]
 
     def post(self, request, *args, **kwargs):
+        # get_token() marca o request para o CsrfViewMiddleware gravar o
+        # cookie csrftoken na resposta. Sem isso o SPA não tinha cookie para
+        # ecoar no header X-CSRFToken e todo POST/PATCH/DELETE autenticado por
+        # cookie falhava com "CSRF cookie not set".
+        get_token(request)
         response = super().post(request, *args, **kwargs)
         access = response.data.get("access")
         refresh = response.data.get("refresh")
@@ -127,11 +133,43 @@ class VetTokenRefreshView(TokenRefreshView):
                 )
                 dados["refresh"] = refresh_cookie
                 request._full_data = dados
+        # Renova também o cookie CSRF a cada refresh, para que sessões longas
+        # continuem conseguindo enviar o header nas operações de escrita.
+        get_token(request)
         response = super().post(request, *args, **kwargs)
         access = response.data.get("access")
         refresh = response.data.get("refresh")
         if access:
             _set_jwt_cookies(response, access, refresh)
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+class CsrfCookieView(APIView):
+    """Garante o cookie CSRF e devolve o token para o SPA.
+
+    O front em staging roda em outro domínio (Netlify) e, por isso, não
+    consegue ler o cookie ``csrftoken`` via ``document.cookie``. Este endpoint
+    público cria o cookie e devolve em JSON um token mascarado equivalente; o
+    SPA guarda o valor em memória e o envia no header ``X-CSRFToken``,
+    completando o double-submit. Não expõe dados e não autentica ninguém.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        tags=["Autenticação"],
+        summary="Obtém/renova o token CSRF",
+        description=(
+            "Define o cookie csrftoken (se ainda não existir) e retorna um "
+            "token equivalente em `csrfToken` para ser enviado no header "
+            "X-CSRFToken pelas requisições de escrita."
+        ),
+    )
+    def get(self, request, *args, **kwargs):
+        token = get_token(request)
+        response = Response({"csrfToken": token})
         response["Cache-Control"] = "no-store"
         return response
 

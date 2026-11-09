@@ -303,6 +303,10 @@ CORS_ALLOW_HEADERS = [
     "content-type",
     "origin",
     "x-requested-with",
+    # O SPA envia o token CSRF no header (double-submit cookie). Sem ele na
+    # lista, o preflight cross-origin (staging Netlify -> API) bloqueia
+    # POST/PATCH/DELETE antes mesmo de chegar ao Django.
+    "x-csrftoken",
 ]
 
 CORS_ALLOW_CREDENTIALS = True

@@ -145,7 +145,12 @@ SESSION_COOKIE_HTTPONLY = True
 # junto com HTTPS/Secure. O default de produção continua "Lax".
 SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
 CSRF_COOKIE_SAMESITE = os.environ.get("CSRF_COOKIE_SAMESITE", "Lax")
-CSRF_COOKIE_HTTPONLY = True
+# O double-submit exige que o SPA leia o valor do cookie e o devolva no header
+# X-CSRFToken. Mantê-lo HttpOnly tornava a proteção impossível no navegador
+# (o cookie viajava, mas o header nunca era preenchido). Não é um segredo:
+# é um nonce vinculado à sessão. Em produção com proxy same-origin o JS lê o
+# cookie; em staging cross-origin o valor vem do endpoint /token/csrf/.
+CSRF_COOKIE_HTTPONLY = False
 
 # O TLS será terminado pelo Tailscale (serve). Confiamos no header
 # X-Forwarded-Proto (definido pelo Tailscale/nginx) para o Django reconhecer

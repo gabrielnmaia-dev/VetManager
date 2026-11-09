@@ -1,3 +1,4 @@
+import json
 import os
 from io import StringIO
 from unittest.mock import patch
@@ -6,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.cache import cache
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import Client, TestCase
 from rest_framework.test import APIClient
 
 User = get_user_model()
@@ -74,6 +75,64 @@ class LoginJwtTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["user"]["groups"], ["recepcao"])
+
+
+class CsrfCookieTests(TestCase):
+    """O SPA precisa de um cookie CSRF e do valor para o header X-CSRFToken."""
+
+    def test_endpoint_publico_define_cookie_e_devolve_token(self):
+        response = self.client.get("/api/v1/token/csrf/")
+
+        self.assertEqual(response.status_code, 200)
+        token = response.json()["csrfToken"]
+        self.assertTrue(token)
+        self.assertIn("csrftoken", response.cookies)
+        # get_token() devolve o token mascarado; o cookie guarda o segredo.
+        # Ambos são aceitos pelo CsrfViewMiddleware no header X-CSRFToken.
+        self.assertTrue(response.cookies["csrftoken"].value)
+
+    def test_login_tambem_define_cookie_csrf(self):
+        User.objects.create_user(
+            username="atendente-csrf", password="senha-super-secreta-123"
+        )
+
+        response = self.client.post(
+            "/api/v1/token/",
+            {
+                "username": "atendente-csrf",
+                "password": "senha-super-secreta-123",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("csrftoken", response.cookies)
+
+    def test_token_mascarado_do_endpoint_e_aceito_no_header(self):
+        """O valor retornado em JSON funciona como X-CSRFToken."""
+        user = User.objects.create_user(
+            username="recepcao-csrf", password="senha-super-secreta-123"
+        )
+        user.groups.add(Group.objects.get(name="recepcao"))
+
+        client = Client(enforce_csrf_checks=True)
+        login = client.post(
+            "/api/v1/token/",
+            {
+                "username": "recepcao-csrf",
+                "password": "senha-super-secreta-123",
+            },
+        )
+        self.assertEqual(login.status_code, 200)
+
+        token = client.get("/api/v1/token/csrf/").json()["csrfToken"]
+        response = client.post(
+            "/api/v1/tutores/",
+            data=json.dumps({"nome": "Tutor CSRF", "telefone": "11 90000-0000"}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=token,
+        )
+
+        self.assertEqual(response.status_code, 201)
 
 
 class ProntuarioPermissaoTests(TestCase):
