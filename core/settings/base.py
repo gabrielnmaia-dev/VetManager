@@ -302,7 +302,10 @@ JWT_COOKIE_SAMESITE = os.environ.get("JWT_COOKIE_SAMESITE", "Lax")
 # Deixe vazio para cookie host-only (recomendado). Só preencha se precisar
 # compartilhar entre subdomínios (ex.: ".seudominio.com").
 JWT_COOKIE_DOMAIN = os.environ.get("JWT_COOKIE_DOMAIN") or None
-JWT_COOKIE_PATH = "/"
+# Path do cookie. Em deploys que compartilham o hostname com outra aplicação
+# (ex.: staging em subpath do Funnel), defina algo como /staging-api/ para
+# não colidir com os cookies da aplicação publicada na raiz.
+JWT_COOKIE_PATH = os.environ.get("JWT_COOKIE_PATH") or "/"
 
 
 LOGGING = {
