@@ -64,7 +64,7 @@ log "Build da imagem de staging..."
   -f "$COMPOSE_FILE" \
   build web
 
-log "Subindo/atualizando apenas o staging (porta host: $APP_PORT)..."
+log "Subindo/atualizando apenas o staging (porta host: ${STAGING_APP_PORT:-4001})..."
 "$DOCKER" compose \
   --project-name "$COMPOSE_PROJECT_NAME" \
   --env-file "$ENV_FILE" \
