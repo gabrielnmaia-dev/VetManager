@@ -1,0 +1,69 @@
+# =========================================================
+# VetManager - Docker Compose de STAGING (VPS)
+# =========================================================
+# Projeto e volumes isolados da produção. O Gunicorn escuta em 8000 dentro do
+# container e é publicado apenas no host em 127.0.0.1:${APP_PORT:-4001}, onde
+# o Nginx de staging (nginx-backend-staging.conf) faz o proxy.
+#
+# Uso no servidor:
+#   cp .env.staging.example .env.staging   # e edite os valores
+#   ./deploy-backend-staging.sh            # faz pull, build e sobe só o staging
+#
+# Variáveis de interpolação (lidas do .env.staging via --env-file):
+#   STAGING_APP_PORT, STAGING_BIND_ADDR, STAGING_ENV_FILE,
+#   GUNICORN_WORKERS, GUNICORN_TIMEOUT
+# =========================================================
+name: vetmanager-staging
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["sh", "/app/deploy/entrypoint.sh"]
+    command: >
+      gunicorn core.wsgi:application
+      --bind ${GUNICORN_BIND:-0.0.0.0:8000}
+      --workers ${GUNICORN_WORKERS:-2}
+      --timeout ${GUNICORN_TIMEOUT:-60}
+    ports:
+      # Publica somente no loopback do host; o Nginx de staging expõe o domínio.
+      - "${STAGING_BIND_ADDR:-127.0.0.1}:${STAGING_APP_PORT:-4001}:8000"
+    volumes:
+      - static_data_staging:/app/staticfiles
+      - media_data_staging:/app/media
+      - backups_staging:/app/backups
+    env_file:
+      - ${STAGING_ENV_FILE:-.env.staging}
+    environment:
+      - DJANGO_SETTINGS_MODULE=core.settings.staging
+      - ENVIRONMENT=staging
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    volumes:
+      - postgres_data_staging:/var/lib/postgresql/data
+    env_file:
+      - ${STAGING_ENV_FILE:-.env.staging}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+volumes:
+  postgres_data_staging:
+  static_data_staging:
+  media_data_staging:
+  backups_staging:

@@ -2,6 +2,10 @@
 .env
 .env.prod
 .prod.env
+# Permitidos para os ambientes de staging/produção (não comitar segredos reais;
+# use os arquivos *.example como modelo).
+!.env.production
+!.env.staging
 venv/
 __pycache__/
 *.pyc

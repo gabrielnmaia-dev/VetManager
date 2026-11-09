@@ -6,6 +6,11 @@ from django.core.exceptions import ImproperlyConfigured
 
 DEBUG = False
 
+# Ambiente lógico: "production" (default) ou "staging".
+# Em staging os defaults de domínio mudam e o HSTS fica desligado.
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "production").strip().lower()
+IS_STAGING = ENVIRONMENT == "staging"
+
 # --- Segredos obrigatórios --------------------------------------------
 if not SECRET_KEY or SECRET_KEY.startswith("troque-") or len(SECRET_KEY) < 32:
     raise ImproperlyConfigured(
@@ -16,13 +21,18 @@ if not os.environ.get("DATABASE_URL"):
     raise ImproperlyConfigured("DATABASE_URL não definida no ambiente de produção.")
 
 # --- Hosts / domínios -------------------------------------------------
-# Domínio público do Tailscale Funnel (o proxy do Netlify encaminha para ele).
-# Pode ser sobrescrito por FUNNEL_HOST no .env.prod se o domínio mudar.
-FUNNEL_HOST = os.environ.get("FUNNEL_HOST", "serverubunto.tail459c47.ts.net")
-# Origem do front no Netlify (usada no CSRF e liberada no CORS mais abaixo).
-NETLIFY_ORIGIN = os.environ.get(
-    "NETLIFY_ORIGIN", "https://vetmanager-letvet.netlify.app"
+# Domínio público da API (produção: Funnel; staging: subdomínio próprio).
+_DEFAULT_FUNNEL_HOST = (
+    "api-staging.seudominio.com" if IS_STAGING else "serverubunto.tail459c47.ts.net"
 )
+_DEFAULT_NETLIFY_ORIGIN = (
+    "https://staging--vetmanager-letvet.netlify.app"
+    if IS_STAGING
+    else "https://vetmanager-letvet.netlify.app"
+)
+FUNNEL_HOST = os.environ.get("FUNNEL_HOST", _DEFAULT_FUNNEL_HOST)
+# Origem do front no Netlify (usada no CSRF e liberada no CORS mais abaixo).
+NETLIFY_ORIGIN = os.environ.get("NETLIFY_ORIGIN", _DEFAULT_NETLIFY_ORIGIN)
 
 # ALLOWED_HOSTS = lista separada por vírgula (ex.: "1.2.3.4,meuapp.com").
 # Mantém compatibilidade com RENDER_EXTERNAL_HOSTNAME caso volte ao Render.
@@ -90,19 +100,35 @@ if not os.environ.get("REDIS_URL"):
     )
 
 # --- CORS (frontend no Netlify) ---------------------------------------
-# Com o proxy /api do Netlify as chamadas viram same-origin e CORS deixa de
-# ser necessário; mantemos a origem liberada para clientes que chamem a API
-# diretamente pelo domínio do Funnel.
+# Em produção o proxy /api do Netlify mantém tudo same-origin; ainda assim a
+# origem exata fica liberada para clientes que chamem a API diretamente.
+# Em staging o front pode chamar a API por URL absoluta (cross-origin), então
+# liberamos também os deploys/previews do Netlify via regex.
 _default_frontend = NETLIFY_ORIGIN
 CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = [
-    o.strip()
-    for o in os.environ.get(
-        "CORS_ALLOWED_ORIGINS",
-        os.environ.get("FRONTEND_URL", _default_frontend),
-    ).split(",")
-    if o.strip()
-]
+CORS_ALLOWED_ORIGINS = sorted(
+    {
+        o.strip()
+        for o in os.environ.get(
+            "CORS_ALLOWED_ORIGINS",
+            os.environ.get("FRONTEND_URL", _default_frontend),
+        ).split(",")
+        if o.strip()
+    }
+    | {NETLIFY_ORIGIN}
+)
+
+# Aceita qualquer subdomínio de deploy do Netlify quando habilitado.
+# O default é True apenas em staging; em produção continue exigindo a origem
+# exata em CORS_ALLOWED_ORIGINS, a menos que CORS_ALLOW_NETLIFY_APP=True.
+CORS_ALLOWED_ORIGIN_REGEXES = sorted(
+    set(env_list("CORS_ALLOWED_ORIGIN_REGEXES"))
+    | (
+        {r"^https://[a-z0-9-]+\.netlify\.app$"}
+        if env_bool("CORS_ALLOW_NETLIFY_APP", IS_STAGING)
+        else set()
+    )
+)
 
 # --- Segurança --------------------------------------------------------
 # Headers aplicados sempre (não dependem de TLS).
@@ -111,8 +137,10 @@ SECURE_REFERRER_POLICY = "same-origin"
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_SAMESITE = "Lax"
+# Em staging cross-site (front Netlify -> API em outro domínio) use "None"
+# junto com HTTPS/Secure. O default de produção continua "Lax".
+SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
+CSRF_COOKIE_SAMESITE = os.environ.get("CSRF_COOKIE_SAMESITE", "Lax")
 CSRF_COOKIE_HTTPONLY = True
 
 # O TLS será terminado pelo Tailscale (serve). Confiamos no header
@@ -125,9 +153,15 @@ if env_bool("USE_HTTPS"):
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+    # HSTS longo é adequado à produção; em staging o default é 0 para não
+    # "grudar" HSTS no subdomínio de testes. Pode ser sobrescrito por env.
+    SECURE_HSTS_SECONDS = env_int(
+        "SECURE_HSTS_SECONDS", 0 if IS_STAGING else 31536000
+    )
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool(
+        "SECURE_HSTS_INCLUDE_SUBDOMAINS", not IS_STAGING
+    )
+    SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", not IS_STAGING)
 
 # --- DRF ---------------------------------------------------------------
 # Throttling, JWT e RBAC são configurados em base.py.
