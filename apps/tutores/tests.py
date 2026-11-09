@@ -5,7 +5,7 @@ from django.db import IntegrityError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.pets.models import Pet
+from apps.pets.models import Especie, Pet, Raca
 
 from .models import Tutor
 from .services import criar_tutor_com_pets
@@ -20,13 +20,46 @@ class TutorApiTestCase(TestCase):
         self.user = User.objects.create_user(
             username="recepcao", password="senha-super-secreta-123"
         )
+        # O usuário deve pertencer ao grupo esperado pelos role_polices dos ViewSets.
+        from django.contrib.auth.models import Group
+        grupo, _ = Group.objects.get_or_create(name="recepcao")
+        self.user.groups.add(grupo)
         self.client = APIClient()
         self.client.force_authenticate(self.user)
+        # Catálogos controlados usados nos pets de teste.
+        self.especie_cao, _ = Especie.objects.get_or_create(nome="Cão")
+        self.especie_gato, _ = Especie.objects.get_or_create(nome="Gato")
+        self.raca_srd, _ = Raca.objects.get_or_create(
+            especie=self.especie_cao, nome="SRD"
+        )
+        self.raca_sem_raca, _ = Raca.objects.get_or_create(
+            especie=self.especie_gato, nome="Sem Raça"
+        )
+        self.raca_labrador, _ = Raca.objects.get_or_create(
+            especie=self.especie_cao, nome="Labrador"
+        )
 
     def criar_tutor(self, nome, telefone, cpf="", pets=()):
         tutor = Tutor.objects.create(nome=nome, telefone=telefone, cpf=cpf)
         for pet in pets:
-            Pet.objects.create(tutor=tutor, **pet)
+            # Converte strings de espécie/raça para instâncias dos catálogos.
+            pet_data = dict(pet)
+            if "especie" in pet_data and isinstance(pet_data["especie"], str):
+                # Normaliza "Cao" para "Cão" (sem tilde -> com tilde)
+                nome_especie = pet_data["especie"]
+                if nome_especie == "Cao":
+                    nome_especie = "Cão"
+                especie, _ = Especie.objects.get_or_create(nome=nome_especie)
+                pet_data["especie"] = especie
+            if "raca" in pet_data and isinstance(pet_data["raca"], str):
+                nome_raca = pet_data["raca"]
+                especie_obj = pet_data.get("especie", self.especie_cao)
+                raca, _ = Raca.objects.get_or_create(
+                    especie=especie_obj,
+                    nome=nome_raca,
+                )
+                pet_data["raca"] = raca
+            Pet.objects.create(tutor=tutor, **pet_data)
         return tutor
 
 
@@ -42,9 +75,10 @@ class TutorListComPetsTests(TutorApiTestCase):
                 ],
             )
 
-        # 3 queries = count da paginacao + pagina + prefetch de pets.
-        # Sem prefetch seriam 3 + 1 query por tutor (N+1).
-        with self.assertNumQueries(3):
+        # 4 queries = count da paginacao + pagina + prefetch de pets + auth group check.
+        # Com prefetch seriam 3 + 1 query por tutor (N+1), mais 1 para a checagem
+        # de grupos do RBAC (IsAuthenticated + RoleBasedPermission).
+        with self.assertNumQueries(4):
             response = self.client.get("/api/v1/tutores/")
 
         self.assertEqual(response.status_code, 200)
@@ -56,8 +90,9 @@ class TutorListComPetsTests(TutorApiTestCase):
             [p["nome"] for p in tutor0["pets"]], ["Pet 0A", "Pet 0B"]
         )
         for pet in tutor0["pets"]:
-            self.assertEqual(
-                sorted(pet.keys()), ["especie", "id", "nome", "raca"]
+            self.assertCountEqual(
+                sorted(pet.keys()),
+                ["especie", "especie_nome", "id", "nome", "raca", "raca_nome"],
             )
 
     def test_lista_com_dois_tutores_mantem_num_queries_estavel(self):
@@ -69,7 +104,8 @@ class TutorListComPetsTests(TutorApiTestCase):
         )
         self.criar_tutor(nome="Bruno", telefone="11 92222-2222")
 
-        with self.assertNumQueries(3):
+        # 4 queries = 3 padrões + auth group check (não cresce com número de tutores).
+        with self.assertNumQueries(4):
             response = self.client.get("/api/v1/tutores/")
 
         self.assertEqual(response.status_code, 200)
@@ -87,8 +123,8 @@ class TutorListComPetsTests(TutorApiTestCase):
         )
         rex = tutor.pets.get()
 
-        # get_object + prefetch dos pets = 2 queries.
-        with self.assertNumQueries(2):
+        # get_object + prefetch dos pets + auth group check = 3 queries.
+        with self.assertNumQueries(3):
             response = self.client.get(f"/api/v1/tutores/{tutor.id}/")
 
         self.assertEqual(response.status_code, 200)
@@ -97,8 +133,8 @@ class TutorListComPetsTests(TutorApiTestCase):
         self.assertEqual(len(data["pets"]), 1)
         self.assertEqual(data["pets"][0]["id"], str(rex.id))
         self.assertEqual(data["pets"][0]["nome"], "Rex")
-        self.assertEqual(data["pets"][0]["especie"], "Cao")
-        self.assertEqual(data["pets"][0]["raca"], "Labrador")
+        self.assertEqual(data["pets"][0]["especie_nome"], "Cão")
+        self.assertEqual(data["pets"][0]["raca_nome"], "Labrador")
 
 
 class TutorSearchTests(TutorApiTestCase):
@@ -171,7 +207,13 @@ class TutorCreateCascadeTests(TutorApiTestCase):
         payload = {
             "nome": "Ricardo Alves",
             "telefone": "11 96666-7777",
-            "pets": [{"nome": "Totoca", "especie": "Cao", "raca": "SRD"}],
+            "pets": [
+                {
+                    "nome": "Totoca",
+                    "especie": str(self.especie_cao.id),
+                    "raca": str(self.raca_srd.id),
+                }
+            ],
         }
 
         response = self.client.post("/api/v1/tutores/", payload, format="json")
@@ -186,16 +228,24 @@ class TutorCreateCascadeTests(TutorApiTestCase):
         self.assertEqual(len(data["pets"]), 1)
         self.assertEqual(data["pets"][0]["id"], str(pet.id))
         self.assertEqual(data["pets"][0]["nome"], "Totoca")
-        self.assertEqual(data["pets"][0]["especie"], "Cao")
-        self.assertEqual(data["pets"][0]["raca"], "SRD")
+        self.assertEqual(data["pets"][0]["especie_nome"], "Cão")
+        self.assertEqual(data["pets"][0]["raca_nome"], "SRD")
 
     def test_cria_tutor_com_dois_pets(self):
         payload = {
             "nome": "Carla Dias",
             "telefone": "11 97777-8888",
             "pets": [
-                {"nome": "Pretinha", "especie": "Gato", "raca": "Sem Raca"},
-                {"nome": "Mel", "especie": "Cao", "sexo": "F"},
+                {
+                    "nome": "Pretinha",
+                    "especie": str(self.especie_gato.id),
+                    "raca": str(self.raca_sem_raca.id),
+                },
+                {
+                    "nome": "Mel",
+                    "especie": str(self.especie_cao.id),
+                    "sexo": "F",
+                },
             ],
         }
 
@@ -218,7 +268,10 @@ class TutorCreateCascadeTests(TutorApiTestCase):
             "nome": "Tutor Novo",
             "telefone": "11 90000-1111",
             "pets": [
-                {"nome": "Valido", "especie": "Cao"},
+                {
+                    "nome": "Valido",
+                    "especie": str(self.especie_cao.id),
+                },
                 {"nome": "Sem Especie"},  # especie obrigatoria -> 400
             ],
         }
@@ -267,11 +320,15 @@ class TutorCreateCascadeTests(TutorApiTestCase):
 class TutorServiceRollbackTests(TestCase):
     """Rollback transacional no service (falha em nível de banco)."""
 
+    def setUp(self):
+        self.especie_cao, _ = Especie.objects.get_or_create(nome="Cão")
+        self.especie_gato, _ = Especie.objects.get_or_create(nome="Gato")
+
     def test_rollback_quando_segundo_pet_falha(self):
         tutor_data = {"nome": "Rollback", "telefone": "11 90000-0000"}
         pets_data = [
-            {"nome": "Primeiro", "especie": "Cao"},
-            {"nome": "Segundo", "especie": "Gato"},
+            {"nome": "Primeiro", "especie": self.especie_cao},
+            {"nome": "Segundo", "especie": self.especie_gato},
         ]
 
         original_create = Pet.objects.create
@@ -297,7 +354,7 @@ class TutorServiceRollbackTests(TestCase):
     def test_cria_tutor_e_pets_quando_nada_falha(self):
         tutor = criar_tutor_com_pets(
             {"nome": "Sucesso", "telefone": "11 91234-9999"},
-            [{"nome": "Bela", "especie": "Cao"}],
+            [{"nome": "Bela", "especie": self.especie_cao}],
         )
 
         self.assertEqual(Tutor.objects.count(), 1)

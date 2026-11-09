@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     'apps.atendimentos',
     'apps.prontuario',
     'apps.dashboard',
+    'apps.auditoria.apps.AuditoriaConfig',
     'apps.base'
 ]
 
@@ -232,7 +233,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = os.environ.get('TIME_ZONE', 'America/Fortaleza')
 
 USE_I18N = True
 
@@ -285,8 +286,11 @@ CORS_ALLOW_CREDENTIALS = True
 # Cookies de sessão/CSRF (Django) e JWT (customizados, abaixo).
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SAMESITE = "Lax"
+# O cookie csrftoken precisa ser legível pelo JS do SPA para ser ecoado no
+# header X-CSRFToken (double-submit). Não é um segredo: é um nonce vinculado à
+# sessão; mantê-lo HttpOnly inviabilizaria a proteção CSRF no frontend.
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = os.environ.get("CSRF_COOKIE_SAMESITE", "Lax")
 
 # JWT em cookies httpOnly.
 # Com o proxy /api do Netlify (ou o nginx servindo o front no mesmo domínio),
@@ -299,6 +303,12 @@ JWT_REFRESH_COOKIE_NAME = "refresh"
 # Secure mesmo sem HTTPS (exceção de dev).
 JWT_COOKIE_SECURE = env_bool("JWT_COOKIE_SECURE", True)
 JWT_COOKIE_SAMESITE = os.environ.get("JWT_COOKIE_SAMESITE", "Lax")
+# SameSite=None só é aceito por navegadores junto com Secure. Falhar cedo
+# evita um deploy em que o login "funciona" e some na navegação seguinte.
+if JWT_COOKIE_SAMESITE.lower() == "none" and not JWT_COOKIE_SECURE:
+    raise ValueError(
+        "JWT_COOKIE_SAMESITE=None exige JWT_COOKIE_SECURE=True."
+    )
 # Deixe vazio para cookie host-only (recomendado). Só preencha se precisar
 # compartilhar entre subdomínios (ex.: ".seudominio.com").
 JWT_COOKIE_DOMAIN = os.environ.get("JWT_COOKIE_DOMAIN") or None

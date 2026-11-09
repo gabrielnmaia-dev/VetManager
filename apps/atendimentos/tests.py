@@ -1,8 +1,9 @@
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.db import IntegrityError, connection
 from django.db.models import ProtectedError
 from django.test import TestCase
@@ -11,7 +12,7 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.test import APIClient
 
-from apps.pets.models import Pet
+from apps.pets.models import Especie, Pet, Raca
 from apps.tutores.models import Tutor
 from apps.veterinarios.models import Profissional
 
@@ -31,14 +32,30 @@ class AtendimentoApiTestCase(TestCase):
         self.user = User.objects.create_user(
             username="recepcao", password="senha-super-secreta-123"
         )
+        from django.contrib.auth.models import Group
+        grupo, _ = Group.objects.get_or_create(name="recepcao")
+        self.user.groups.add(grupo)
         self.client = APIClient()
         self.client.force_authenticate(self.user)
+        # Catálogos controlados para pets de teste.
+        self.especie_cao, _ = Especie.objects.get_or_create(nome="Cão")
+        self.especie_gato, _ = Especie.objects.get_or_create(nome="Gato")
+        self.raca_srd, _ = Raca.objects.get_or_create(
+            especie=self.especie_cao, nome="SRD"
+        )
 
     def criar_tutor(self, nome="Joana Reis", telefone="11 91111-1111"):
         return Tutor.objects.create(nome=nome, telefone=telefone)
 
-    def criar_pet(self, tutor, nome="Rex", especie="Cao"):
-        return Pet.objects.create(tutor=tutor, nome=nome, especie=especie)
+    def criar_pet(self, tutor, nome="Rex", especie=None):
+        if especie is None:
+            especie = self.especie_cao
+        elif isinstance(especie, str):
+            especie_obj, _ = Especie.objects.get_or_create(nome=especie)
+            especie = especie_obj
+        return Pet.objects.create(
+            tutor=tutor, nome=nome, especie=especie
+        )
 
     def criar_profissional(self, nome="Dra. Ana Souza", cargo="Veterinário"):
         return Profissional.objects.create(nome=nome, cargo=cargo)
@@ -89,8 +106,10 @@ class AtendimentoRapidoTests(AtendimentoApiTestCase):
         pet = self.criar_pet(tutor)
         payload = self.payload_base(tutor_id=str(tutor.id), pet_id=str(pet.id))
 
-        # busca do tutor + busca do pet (select_related) + insert = 3 queries.
-        with self.assertNumQueriesReais(3):
+        # busca do tutor + busca do pet (select_related) + insert = 3 queries
+        # de dados + 1 query de checagem de grupo do RBAC + 1 query para
+        # buscar o nome da espécie no response serializer = 5 totais.
+        with self.assertNumQueriesReais(5):
             response = self.client.post(URL_RAPIDO, payload, format="json")
 
         self.assertEqual(response.status_code, 201)
@@ -108,7 +127,13 @@ class AtendimentoRapidoTests(AtendimentoApiTestCase):
         )
         self.assertEqual(
             data["pet"],
-            {"id": str(pet.id), "nome": "Rex", "especie": "Cao", "raca": ""},
+            {
+                "id": str(pet.id),
+                "nome": "Rex",
+                "especie": str(self.especie_cao.id),
+                "especie_nome": "Cão",
+                "raca": None,
+            },
         )
         self.assertEqual(data["pet_nome"], "Rex")
         self.assertEqual(data["tutor_nome"], "Joana Reis")
@@ -131,11 +156,19 @@ class AtendimentoRapidoTests(AtendimentoApiTestCase):
         tutor = self.criar_tutor()
         payload = self.payload_base(
             tutor_id=str(tutor.id),
-            pet={"nome": "Mel", "especie": "Cao", "raca": "SRD", "sexo": "F"},
+            pet={
+                "nome": "Mel",
+                "especie": str(self.especie_cao.id),
+                "raca": str(self.raca_srd.id),
+                "sexo": "F",
+            },
         )
 
-        # busca do tutor + insert do pet + insert do atendimento = 3 queries.
-        with self.assertNumQueriesReais(3):
+        # busca do tutor + validação da espécie + validação da raça +
+        # insert do pet + insert do atendimento = 4 queries de dados
+        # + 1 query de checagem de grupo do RBAC + 1 query para buscar
+        # o nome da espécie no response serializer = 6 totais.
+        with self.assertNumQueriesReais(6):
             response = self.client.post(URL_RAPIDO, payload, format="json")
 
         self.assertEqual(response.status_code, 201)
@@ -153,11 +186,13 @@ class AtendimentoRapidoTests(AtendimentoApiTestCase):
     def test_tutor_novo_e_pet_novo(self):
         payload = self.payload_base(
             tutor={"nome": "Tutor Novo", "telefone": "11 92222-3333"},
-            pet={"nome": "Pipoca", "especie": "Gato"},
+            pet={"nome": "Pipoca", "especie": str(self.especie_gato.id)},
         )
 
-        # insert do tutor + insert do pet + insert do atendimento = 3 queries.
-        with self.assertNumQueriesReais(3):
+        # insert do tutor + insert do pet + insert do atendimento = 3 queries
+        # de dados + 1 query de checagem de grupo do RBAC + 1 query para
+        # buscar o nome da espécie no response serializer = 5 totais.
+        with self.assertNumQueriesReais(5):
             response = self.client.post(URL_RAPIDO, payload, format="json")
 
         self.assertEqual(response.status_code, 201)
@@ -217,7 +252,10 @@ class AtendimentoRapidoTests(AtendimentoApiTestCase):
         payload = self.payload_base(
             tutor_id=str(tutor.id),
             pet_id=str(pet.id),
-            pet={"nome": "Outro Pet", "especie": "Cao"},
+            pet={
+                "nome": "Outro Pet",
+                "especie": str(self.especie_cao.id),
+            },
         )
 
         response = self.client.post(URL_RAPIDO, payload, format="json")
@@ -293,10 +331,17 @@ class AtendimentoRapidoTests(AtendimentoApiTestCase):
 class AtendimentoRapidoServiceTests(TestCase):
     """Regras do service direto (sem HTTP): validação e rollback."""
 
+    def setUp(self):
+        self.especie_cao, _ = Especie.objects.get_or_create(nome="Cão")
+        self.especie_gato, _ = Especie.objects.get_or_create(nome="Gato")
+
     def dados_validos(self, **extra):
         dados = {
             "tutor": {"nome": "Rollback", "telefone": "11 90000-0000"},
-            "pet": {"nome": "Pipoca", "especie": "Gato"},
+            "pet": {
+                "nome": "Pipoca",
+                "especie": self.especie_gato,
+            },
             "nome_profissional": "Dra. Ana",
             "tipo_servico": "consulta",
             "data_hora_inicio": timezone.make_aware(
@@ -322,7 +367,10 @@ class AtendimentoRapidoServiceTests(TestCase):
 
     def test_pet_existente_de_outro_tutor_dispara_erro_sem_criar_nada(self):
         tutor_a = Tutor.objects.create(nome="Dona Alves", telefone="11 91111-1111")
-        pet_de_a = Pet.objects.create(tutor=tutor_a, nome="Rex", especie="Cao")
+        especie_cao, _ = Especie.objects.get_or_create(nome="Cão")
+        pet_de_a = Pet.objects.create(
+            tutor=tutor_a, nome="Rex", especie=especie_cao
+        )
         tutor_b = Tutor.objects.create(
             nome="Outro Tutor", telefone="11 94444-5555"
         )
@@ -468,6 +516,11 @@ class ProfissionalIdTests(AtendimentoApiTestCase):
             pet, profissional=prof_a, nome_profissional="Dra. Ana Souza"
         )
 
+        # Atualização de atendimento é restrita a admin/veterinário (RBAC).
+        self.user.groups.clear()
+        grupo_vet, _ = Group.objects.get_or_create(name="veterinario")
+        self.user.groups.add(grupo_vet)
+
         response = self.client.patch(
             f"{URL_ATENDIMENTOS}{atendimento.id}/",
             {"profissional_id": str(prof_b.id)},
@@ -523,11 +576,17 @@ class ProfissionalIdTests(AtendimentoApiTestCase):
         prof = self.criar_profissional()
         self.criar_atendimento_direto(pet, profissional=prof)
 
-        with self.assertRaises(ProtectedError):
-            prof.delete()
+        # Soft delete substitui o hard delete no fluxo comum: não há erro.
+        prof.delete(user=self.user)
+        self.assertEqual(Profissional.objects.count(), 0)
+        self.assertEqual(Profissional.all_objects.count(), 1)
 
-        self.assertEqual(Profissional.objects.count(), 1)
-        self.assertEqual(Atendimento.objects.count(), 1)
+        # A remoção física (hard_delete) continua protegida por PROTECT da FK.
+        with self.assertRaises(ProtectedError):
+            prof.hard_delete()
+
+        self.assertEqual(Profissional.objects.count(), 0)
+        self.assertEqual(Profissional.all_objects.count(), 1)
 
 
 class ConflitoHorarioTests(AtendimentoApiTestCase):
@@ -642,6 +701,11 @@ class ConflitoHorarioTests(AtendimentoApiTestCase):
         )
         id_atendimento = primeiro.json()["id"]
 
+        # Atualização exige veterinário (RBAC).
+        self.user.groups.clear()
+        grupo_vet, _ = Group.objects.get_or_create(name="veterinario")
+        self.user.groups.add(grupo_vet)
+
         # 09:00 + 45min: sem ignorar o próprio registro daria conflito consigo.
         response = self.client.patch(
             f"{URL_ATENDIMENTOS}{id_atendimento}/",
@@ -664,6 +728,11 @@ class ConflitoHorarioTests(AtendimentoApiTestCase):
         self.assertEqual(primeiro.status_code, 201)
         self.assertEqual(segundo.status_code, 201)
 
+        # Atualização exige veterinário (RBAC).
+        self.user.groups.clear()
+        grupo_vet, _ = Group.objects.get_or_create(name="veterinario")
+        self.user.groups.add(grupo_vet)
+
         response = self.client.patch(
             f"{URL_ATENDIMENTOS}{segundo.json()['id']}/",
             {"data_hora_inicio": "2026-10-20T09:15:00Z"},
@@ -679,7 +748,7 @@ class ConflitoHorarioTests(AtendimentoApiTestCase):
         obj = Atendimento.objects.get(pk=segundo.json()["id"])
         self.assertEqual(
             obj.data_hora_inicio,
-            timezone.make_aware(datetime(2026, 10, 20, 10, 0)),
+            timezone.make_aware(datetime(2026, 10, 20, 10, 0), dt_timezone.utc),
         )
 
     def test_legado_sem_fk_nao_verifica_conflito(self):
@@ -719,3 +788,181 @@ class ConflitoHorarioTests(AtendimentoApiTestCase):
             response.json()["data_hora_inicio"][0],
         )
         self.assertEqual(Atendimento.objects.count(), 1)
+
+
+class AgendaStatusTests(AtendimentoApiTestCase):
+    """Testes de transições de status: confirmar, cancelar, reagendar, faltou."""
+
+    def setUp(self):
+        super().setUp()
+        self.tutor = self.criar_tutor()
+        self.pet = self.criar_pet(self.tutor)
+        self.prof = self.criar_profissional()
+        self.atendimento = Atendimento.objects.create(
+            pet=self.pet,
+            profissional=self.prof,
+            tipo_servico="consulta",
+            data_hora_inicio=timezone.make_aware(
+                datetime(2026, 10, 20, 9, 0), dt_timezone.utc
+            ),
+            duracao_minutos=30,
+            status="agendado",
+        )
+
+    def test_confirmar_atendimento_agendado(self):
+        self.user.groups.clear()
+        grupo_rec, _ = Group.objects.get_or_create(name="recepcao")
+        self.user.groups.add(grupo_rec)
+        resp = self.client.post(
+            f"/api/v1/atendimentos/{self.atendimento.id}/confirmar/",
+            {},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.status, "confirmado")
+        self.assertIsNotNone(self.atendimento.data_confirmacao)
+
+    def test_cancelar_atendimento_com_motivo(self):
+        self.user.groups.clear()
+        grupo_rec, _ = Group.objects.get_or_create(name="recepcao")
+        self.user.groups.add(grupo_rec)
+        resp = self.client.post(
+            f"/api/v1/atendimentos/{self.atendimento.id}/cancelar/",
+            {"motivo": "Paciente desistiu"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.status, "cancelado")
+        self.assertEqual(self.atendimento.motivo_cancelamento, "Paciente desistiu")
+        self.assertIsNotNone(self.atendimento.data_cancelamento)
+
+    def test_reagendar_atendimento(self):
+        self.user.groups.clear()
+        grupo_rec, _ = Group.objects.get_or_create(name="recepcao")
+        self.user.groups.add(grupo_rec)
+        resp = self.client.post(
+            f"/api/v1/atendimentos/{self.atendimento.id}/reagendar/",
+            {"data_hora_inicio": "2026-10-20T10:00:00Z"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.reagendado_de_id, self.atendimento.pk)
+        # O reagendamento cria um NOVO registro; o antigo continua cancelado? Não,
+        # o reagendamento atualiza o mesmo registro e registra o original.
+
+    def test_marcar_faltou(self):
+        self.user.groups.clear()
+        grupo_vet, _ = Group.objects.get_or_create(name="veterinario")
+        self.user.groups.add(grupo_vet)
+        resp = self.client.post(
+            f"/api/v1/atendimentos/{self.atendimento.id}/faltou/",
+            {},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.status, "faltou")
+
+    def test_realizar_atendimento(self):
+        self.user.groups.clear()
+        grupo_vet, _ = Group.objects.get_or_create(name="veterinario")
+        self.user.groups.add(grupo_vet)
+        resp = self.client.post(
+            f"/api/v1/atendimentos/{self.atendimento.id}/realizar/",
+            {},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.status, "realizado")
+
+
+class AgendaSalaTests(AtendimentoApiTestCase):
+    """Testes de conflito de sala."""
+
+    def setUp(self):
+        super().setUp()
+        from apps.veterinarios.models import SalaConsultorio
+
+        self.sala = SalaConsultorio.objects.create(nome="Sala A", ativo=True)
+        self.tutor = self.criar_tutor()
+        self.pet = self.criar_pet(self.tutor)
+        self.prof = self.criar_profissional()
+
+    def test_conflito_de_sala(self):
+        from django.utils import timezone as tz
+
+        # Profissional diferente para o atendimento existente na mesma sala
+        prof_outro = self.criar_profissional(nome="Dr. Outro", cargo="Veterinário")
+        # Outro pet para o atendimento existente
+        pet_outro = self.criar_pet(self.tutor, nome="Rex2")
+        Atendimento.objects.create(
+            pet=pet_outro,
+            profissional=prof_outro,
+            sala=self.sala,
+            tipo_servico="consulta",
+            data_hora_inicio=tz.make_aware(
+                datetime(2026, 10, 20, 9, 0), dt_timezone.utc
+            ),
+            duracao_minutos=30,
+            status="agendado",
+        )
+        # Mesmo horário sobreposto, mesma sala, profissional diferente -> conflito de sala.
+        resp = self.client.post(
+            URL_ATENDIMENTOS,
+            {
+                "pet": str(self.pet.id),
+                "profissional_id": str(self.prof.id),
+                "sala": str(self.sala.id),
+                "tipo_servico": "consulta",
+                "data_hora_inicio": "2026-10-20T09:15:00Z",
+                "duracao_minutos": 30,
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("sala", resp.json())
+
+
+class AgendaHistoricoStatusTests(AtendimentoApiTestCase):
+    """Testes de histórico de mudanças de status."""
+
+    def setUp(self):
+        super().setUp()
+        self.tutor = self.criar_tutor()
+        self.pet = self.criar_pet(self.tutor)
+        self.prof = self.criar_profissional()
+        self.atendimento = Atendimento.objects.create(
+            pet=self.pet,
+            profissional=self.prof,
+            tipo_servico="consulta",
+            data_hora_inicio=timezone.make_aware(
+                datetime(2026, 10, 20, 9, 0), dt_timezone.utc
+            ),
+            duracao_minutos=30,
+            status="agendado",
+        )
+
+    def test_historico_registra_mudanca_de_status(self):
+        from apps.veterinarios.models import HistoricoStatusAtendimento
+
+        self.user.groups.clear()
+        grupo_rec, _ = Group.objects.get_or_create(name="recepcao")
+        self.user.groups.add(grupo_rec)
+
+        before = HistoricoStatusAtendimento.objects.count()
+        self.client.post(
+            f"/api/v1/atendimentos/{self.atendimento.id}/confirmar/",
+            {},
+            format="json",
+        )
+        self.assertEqual(
+            HistoricoStatusAtendimento.objects.count(), before + 1
+        )
+        historico = HistoricoStatusAtendimento.objects.latest("data_operacao")
+        self.assertEqual(historico.status_anterior, "agendado")
+        self.assertEqual(historico.status_novo, "confirmado")
+        self.assertEqual(historico.usuario, self.user)

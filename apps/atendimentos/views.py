@@ -1,34 +1,71 @@
+"""Views do app atendimentos com suporte a agenda, salas, conflitos e status."""
+
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework import status, viewsets, filters
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+from apps.base.views import AuditModelViewSetMixin
 
 from .models import Atendimento
 from .serializers import (
+    AtendimentoCancelarSerializer,
+    AtendimentoConfirmarSerializer,
+    AtendimentoFaltouSerializer,
     AtendimentoRapidoResponseSerializer,
     AtendimentoRapidoSerializer,
+    AtendimentoReagendarSerializer,
     AtendimentoSerializer,
+)
+from .services import (
+    cancelar_atendimento,
+    confirmar_atendimento,
+    marcar_faltou,
+    reagendar_atendimento,
+    realizar_atendimento,
 )
 
 
-class AtendimentoViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+class AtendimentoViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
+    """ViewSet de atendimentos com ações de status e validação de conflito."""
+
+    role_policy = {
+        "list": ("admin", "veterinario", "recepcao"),
+        "retrieve": ("admin", "veterinario", "recepcao"),
+        "create": ("admin", "veterinario", "recepcao"),
+        "rapido": ("admin", "veterinario", "recepcao"),
+        "update": ("admin", "veterinario"),
+        "partial_update": ("admin", "veterinario"),
+        "destroy": ("admin",),
+        "confirmar": ("admin", "veterinario", "recepcao"),
+        "cancelar": ("admin", "veterinario", "recepcao"),
+        "reagendar": ("admin", "veterinario", "recepcao"),
+        "faltou": ("admin", "veterinario"),
+        "realizar": ("admin", "veterinario"),
+        "*": ("admin",),
+    }
     queryset = Atendimento.objects.select_related(
-        "pet", "pet__tutor", "profissional"
+        "pet", "pet__tutor", "profissional", "sala"
     ).all()
     serializer_class = AtendimentoSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ["taxidog"]
+    filterset_fields = [
+        "taxidog",
+        "profissional",
+        "sala",
+        "status",
+        "tipo_servico",
+    ]
     search_fields = [
         "pet__nome",
         "pet__tutor__nome",
         "profissional__nome",
         "nome_profissional",
     ]
+    audit_entidade = "atendimento"
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -42,9 +79,17 @@ class AtendimentoViewSet(viewsets.ModelViewSet):
         if profissional_id:
             qs = qs.filter(profissional_id=profissional_id)
 
+        sala_id = params.get("sala")
+        if sala_id:
+            qs = qs.filter(sala_id=sala_id)
+
         status_param = params.get("status")
         if status_param:
             qs = qs.filter(status=status_param)
+
+        tipo_servico = params.get("tipo_servico")
+        if tipo_servico:
+            qs = qs.filter(tipo_servico=tipo_servico)
 
         data_inicio = params.get("data_inicio")
         data_fim = params.get("data_fim")
@@ -56,112 +101,104 @@ class AtendimentoViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_serializer_class(self):
-        # Ação de atendimento rápido tem payload e resposta próprios.
         if self.action == "rapido":
             return AtendimentoRapidoSerializer
         return super().get_serializer_class()
 
+    # ------------------------------------------------------------------
+    # Ações de status (confirmar / cancelar / reagendar / faltou / realizar)
+    # ------------------------------------------------------------------
+
+    @extend_schema(
+        request=AtendimentoConfirmarSerializer,
+        responses={200: AtendimentoSerializer},
+        summary="Confirmar atendimento agendado.",
+    )
+    @action(detail=True, methods=["post"], url_path="confirmar")
+    def confirmar(self, request, pk=None):
+        atendimento = self.get_object()
+        serializer = AtendimentoConfirmarSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        atendimento = confirmar_atendimento(
+            atendimento,
+            user=request.user,
+            justificativa=serializer.validated_data.get("justificativa", ""),
+        )
+        return Response(AtendimentoSerializer(atendimento).data)
+
+    @extend_schema(
+        request=AtendimentoCancelarSerializer,
+        responses={200: AtendimentoSerializer},
+        summary="Cancelar atendimento com motivo.",
+    )
+    @action(detail=True, methods=["post"], url_path="cancelar")
+    def cancelar(self, request, pk=None):
+        atendimento = self.get_object()
+        serializer = AtendimentoCancelarSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        atendimento = cancelar_atendimento(
+            atendimento,
+            user=request.user,
+            motivo=serializer.validated_data["motivo"],
+        )
+        return Response(AtendimentoSerializer(atendimento).data)
+
+    @extend_schema(
+        request=AtendimentoReagendarSerializer,
+        responses={200: AtendimentoSerializer},
+        summary="Reagendar atendimento para novo horário/sala.",
+    )
+    @action(detail=True, methods=["post"], url_path="reagendar")
+    def reagendar(self, request, pk=None):
+        atendimento = self.get_object()
+        serializer = AtendimentoReagendarSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        atendimento = reagendar_atendimento(
+            atendimento,
+            user=request.user,
+            nova_data_hora_inicio=serializer.validated_data[
+                "data_hora_inicio"
+            ],
+            nova_duracao_minutos=serializer.validated_data.get(
+                "duracao_minutos"
+            ),
+            nova_sala=serializer.validated_data.get("sala"),
+            justificativa=serializer.validated_data.get("justificativa", ""),
+        )
+        return Response(AtendimentoSerializer(atendimento).data)
+
+    @extend_schema(
+        request=AtendimentoFaltouSerializer,
+        responses={200: AtendimentoSerializer},
+        summary="Marcar atendimento como no-show (faltou).",
+    )
+    @action(detail=True, methods=["post"], url_path="faltou")
+    def faltou(self, request, pk=None):
+        atendimento = self.get_object()
+        serializer = AtendimentoFaltouSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        atendimento = marcar_faltou(
+            atendimento,
+            user=request.user,
+            justificativa=serializer.validated_data.get("justificativa", ""),
+        )
+        return Response(AtendimentoSerializer(atendimento).data)
+
+    @extend_schema(
+        responses={200: AtendimentoSerializer},
+        summary="Marcar atendimento como realizado.",
+    )
+    @action(detail=True, methods=["post"], url_path="realizar")
+    def realizar(self, request, pk=None):
+        atendimento = self.get_object()
+        atendimento = realizar_atendimento(atendimento, user=request.user)
+        return Response(AtendimentoSerializer(atendimento).data)
+
     @extend_schema(
         operation_id="atendimento_rapido_create",
-        summary="Criar atendimento rápido (tutor + pet em uma chamada)",
-        description=(
-            "Cria um atendimento em uma única requisição. Informe `tutor_id`/"
-            "`pet_id` para usar registros já existentes ou `tutor`/`pet` para "
-            "cadastrá-los em cascata — nunca os dois ao mesmo tempo. O pet "
-            "existente precisa pertencer ao tutor informado. Para o "
-            "profissional, envie `profissional_id` (preferencial) ou, por "
-            "compatibilidade, `nome_profissional` — pelo menos um dos dois. "
-            "O mesmo profissional não pode ter dois atendimentos sobrepostos "
-            "(cancelados são ignorados). Tudo é criado em uma única transação "
-            "(rollback em caso de falha)."
-        ),
+        summary="Criar atendimento rápido (tutor + pet em uma chamada).",
         request=AtendimentoRapidoSerializer,
         responses={201: AtendimentoRapidoResponseSerializer},
-        examples=[
-            OpenApiExample(
-                "Tutor e pet existentes",
-                summary="Só ids: nada é cadastrado",
-                value={
-                    "tutor_id": "3f1d2c9a-1c7b-4a2e-9a10-5f2b8d7c6e41",
-                    "pet_id": "b51f3f9e-9a5a-4f8f-8c8e-6c1d0a9b2c73",
-                    "profissional_id": "7a2c1e5f-0b8d-4c3a-9f21-8e6d5b4a3c2d",
-                    "tipo_servico": "consulta",
-                    "data_hora_inicio": "2026-10-20T09:00:00Z",
-                    "duracao_minutos": 30,
-                    "queixa": "Vômitos desde ontem",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                "Tutor existente e pet novo",
-                summary="Cascata só no pet",
-                value={
-                    "tutor_id": "3f1d2c9a-1c7b-4a2e-9a10-5f2b8d7c6e41",
-                    "pet": {
-                        "nome": "Mel",
-                        "especie": "Cão",
-                        "raca": "SRD",
-                        "sexo": "F",
-                    },
-                    "profissional_id": "7a2c1e5f-0b8d-4c3a-9f21-8e6d5b4a3c2d",
-                    "tipo_servico": "vacina",
-                    "data_hora_inicio": "2026-10-20T10:00:00Z",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                "Tutor e pet novos",
-                summary="Cascata completa",
-                value={
-                    "tutor": {"nome": "Joana Reis", "telefone": "11 91111-1111"},
-                    "pet": {"nome": "Rex", "especie": "Cão", "raca": "Labrador"},
-                    "profissional_id": "7a2c1e5f-0b8d-4c3a-9f21-8e6d5b4a3c2d",
-                    "tipo_servico": "retorno",
-                    "data_hora_inicio": "2026-10-21T14:30:00Z",
-                    "queixa": "Retorno pós-cirurgia",
-                    "duracao_minutos": 20,
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                "Atendimento criado (201)",
-                summary="Resposta com tutor e pet em resumo",
-                response_only=True,
-                value={
-                    "id": "8b1b1e2a-3f4c-4d5e-9a6b-0c1d2e3f4a5b",
-                    "pet": {
-                        "id": "b51f3f9e-9a5a-4f8f-8c8e-6c1d0a9b2c73",
-                        "nome": "Rex",
-                        "especie": "Cão",
-                        "raca": "Labrador",
-                    },
-                    "pet_nome": "Rex",
-                    "tutor": {
-                        "id": "3f1d2c9a-1c7b-4a2e-9a10-5f2b8d7c6e41",
-                        "nome": "Joana Reis",
-                        "telefone": "11 91111-1111",
-                        "cpf": "123.456.789-00",
-                    },
-                    "tutor_nome": "Joana Reis",
-                    "profissional_id": "7a2c1e5f-0b8d-4c3a-9f21-8e6d5b4a3c2d",
-                    "profissional": {
-                        "id": "7a2c1e5f-0b8d-4c3a-9f21-8e6d5b4a3c2d",
-                        "nome": "Dr. Paulo Lima",
-                        "cargo": "Veterinário",
-                    },
-                    "nome_profissional": "Dr. Paulo Lima",
-                    "tipo_servico": "retorno",
-                    "tipo_servico_display": "Retorno",
-                    "queixa": "Retorno pós-cirurgia",
-                    "data_hora_inicio": "2026-10-21T14:30:00Z",
-                    "duracao_minutos": 20,
-                    "status": "agendado",
-                    "observacoes": "",
-                    "criado_em": "2026-10-15T12:00:00Z",
-                    "atualizado_em": "2026-10-15T12:00:00Z",
-                },
-            ),
-        ],
     )
     @action(detail=False, methods=["post"], url_path="rapido")
     def rapido(self, request, *args, **kwargs):
@@ -172,7 +209,3 @@ class AtendimentoViewSet(viewsets.ModelViewSet):
             AtendimentoRapidoResponseSerializer(atendimento).data,
             status=status.HTTP_201_CREATED,
         )
-
-    # @method_decorator(cache_page(60 * 5))  # cache de 5 minutos
-    # def list(self, request, *args, **kwargs):
-    #         return super().list(request, *args, **kwargs)

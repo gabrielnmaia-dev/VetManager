@@ -1,3 +1,4 @@
+from django.db.models import Prefetch
 from rest_framework import viewsets, filters
 
 from .models import Tutor
@@ -6,13 +7,22 @@ from .serializers import (
     TutorCreateSerializer,
     TutorSerializer,
 )
+from apps.base.views import AuditModelViewSetMixin
+from apps.pets.models import Pet
 
 
-class TutorViewSet(viewsets.ModelViewSet):
-    queryset = Tutor.objects.prefetch_related("pets").all()
+class TutorViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
+    queryset = Tutor.objects.prefetch_related(
+        Prefetch(
+            "pets",
+            queryset=Pet.objects.select_related("especie", "raca").all(),
+        )
+    ).all()
     serializer_class = TutorSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ["nome", "telefone", "cpf"]
+    audit_entidade = "tutor"
+    role_policy = ("admin", "veterinario", "recepcao")
 
     def get_serializer_class(self):
         # Busca rápida: list/retrieve devolvem o tutor já com os pets.
@@ -23,3 +33,9 @@ class TutorViewSet(viewsets.ModelViewSet):
             return TutorCreateSerializer
         # PUT/PATCH/DELETE seguem com o serializer original (sem cascata).
         return super().get_serializer_class()
+
+    # O mixin AuditModelViewSetMixin injeta created_by/updated_by via
+    # serializer.save(user=request.user) e registra auditoria automaticamente.
+
+    # O mixin AuditModelViewSetMixin injeta created_by/updated_by via
+    # serializer.save(user=request.user) e registra auditoria automaticamente.
