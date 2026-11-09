@@ -11,6 +11,11 @@
 # A comparação ignora caixa, acentos e espaços extras para evitar duplicatas
 # do tipo "Cão"/"cao". O texto original do primeiro registro é mantido como
 # nome de exibição.
+#
+# A reversão copia os nomes dos catálogos de volta para os campos de texto.
+# Para isso, os campos antigos passam temporariamente a aceitar nulos antes de
+# serem removidos: assim a reversão consegue recriá-los, popular e só então
+# restaurar o NOT NULL.
 
 import unicodedata
 
@@ -28,6 +33,18 @@ def _chave(valor):
     texto = unicodedata.normalize("NFKD", _normalizar(valor))
     texto = "".join(c for c in texto if not unicodedata.combining(c))
     return texto.casefold()
+
+
+def _liberar_triggers(schema_editor):
+    """Libera eventos de trigger adiados no PostgreSQL.
+
+    Sem isso, alterar tabelas que receberam inserts/updates na mesma
+    transação falha com "pending trigger events".
+    """
+    if schema_editor.connection.vendor == "postgresql":
+        with schema_editor.connection.cursor() as cursor:
+            cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+            cursor.execute("SET CONSTRAINTS ALL DEFERRED")
 
 
 def migrar_dados(apps, schema_editor):
@@ -78,13 +95,7 @@ def migrar_dados(apps, schema_editor):
 
         pet.save(using=db_alias, update_fields=["especie_fk", "raca_fk"])
 
-    # Os inserts em Especie/Raca usam FKs adiadas. No PostgreSQL é preciso
-    # liberar os eventos de trigger pendentes antes de alterar essas tabelas
-    # nas operações seguintes da mesma transação.
-    if schema_editor.connection.vendor == "postgresql":
-        with schema_editor.connection.cursor() as cursor:
-            cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
-            cursor.execute("SET CONSTRAINTS ALL DEFERRED")
+    _liberar_triggers(schema_editor)
 
 
 def reverter_dados(apps, schema_editor):
@@ -97,6 +108,8 @@ def reverter_dados(apps, schema_editor):
         pet.especie = pet.especie_fk.nome if pet.especie_fk_id else ""
         pet.raca = pet.raca_fk.nome if pet.raca_fk_id else ""
         pet.save(using=db_alias, update_fields=["especie", "raca"])
+
+    _liberar_triggers(schema_editor)
 
 
 class Migration(migrations.Migration):
@@ -130,9 +143,20 @@ class Migration(migrations.Migration):
                 verbose_name="raça",
             ),
         ),
-        # 2. Converte os valores de texto existentes em registros de catálogo.
+        # 2. Campos de texto passam a aceitar nulo (necessário para a reversão).
+        migrations.AlterField(
+            model_name="pet",
+            name="especie",
+            field=models.CharField(max_length=50, null=True),
+        ),
+        migrations.AlterField(
+            model_name="pet",
+            name="raca",
+            field=models.CharField(blank=True, max_length=50, null=True),
+        ),
+        # 3. Converte os valores de texto existentes em registros de catálogo.
         migrations.RunPython(migrar_dados, reverse_code=reverter_dados),
-        # 3. Remove as colunas de texto e promove as FKs aos nomes definitivos.
+        # 4. Remove as colunas de texto e promove as FKs aos nomes definitivos.
         migrations.RemoveField(model_name="pet", name="especie"),
         migrations.RemoveField(model_name="pet", name="raca"),
         migrations.RenameField(
@@ -141,7 +165,7 @@ class Migration(migrations.Migration):
         migrations.RenameField(
             model_name="pet", old_name="raca_fk", new_name="raca"
         ),
-        # 4. Espécie passa a ser obrigatória.
+        # 5. Espécie passa a ser obrigatória.
         migrations.AlterField(
             model_name="pet",
             name="especie",
