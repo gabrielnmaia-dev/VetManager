@@ -178,3 +178,115 @@ class HistoricoResponsabilidadePet(BaseModel):
     @property
     def is_atual(self) -> bool:
         return self.data_fim is None
+
+
+class MedicaoVital(BaseModel):
+    """Registro individual de medições de sinais vitais de um pet.
+
+    Vinculado a um pet e, opcionalmente, a um atendimento e/ou prontuário,
+    permitindo rastrear a evolução de peso, temperatura e outros parâmetros
+    clínicos ao longo do tempo.
+
+    Nenhum campo de medição é obrigatório: registre apenas o que foi medido.
+    """
+
+    pet = models.ForeignKey(
+        Pet,
+        on_delete=models.CASCADE,
+        related_name="medicoes_vitais",
+        verbose_name="pet",
+    )
+    atendimento = models.ForeignKey(
+        "atendimentos.Atendimento",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="medicoes_vitais",
+        verbose_name="atendimento",
+    )
+    prontuario = models.ForeignKey(
+        "prontuario.Prontuario",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="medicoes_vitais",
+        verbose_name="prontuário",
+    )
+    profissional = models.ForeignKey(
+        "veterinarios.Profissional",
+        on_delete=models.PROTECT,
+        related_name="medicoes_vitais",
+        verbose_name="profissional",
+    )
+    data_hora = models.DateTimeField(verbose_name="data e hora da medição")
+
+    peso = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="peso (kg)",
+    )
+    temperatura = models.DecimalField(
+        max_digits=4,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="temperatura (°C)",
+    )
+    frequencia_cardíaca = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="frequência cardíaca (bpm)"
+    )
+    frequencia_respiratoria = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="frequência respiratória (ipm)"
+    )
+    pressao_arterial = models.CharField(
+        max_length=20,
+        blank=True,
+        verbose_name="pressão arterial (mmHg)",
+        help_text="Ex: 120/80",
+    )
+    saturacao = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="saturação de O2 (%)",
+        help_text="Valor entre 0 e 100",
+    )
+    glicemia = models.DecimalField(
+        max_digits=5,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="glicemia (mg/dL)",
+    )
+    escore_corporal = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="escore corporal",
+        help_text="Escore de condição corporal (ex: 1-9)",
+    )
+    observacoes = models.TextField(blank=True, verbose_name="observações")
+
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta(BaseModel.Meta):
+        ordering = ["-data_hora"]
+        verbose_name = "medição de sinais vitais"
+        verbose_name_plural = "medições de sinais vitais"
+        indexes = [
+            models.Index(fields=["pet", "-data_hora"]),
+            models.Index(fields=["atendimento"]),
+            models.Index(fields=["prontuario"]),
+        ]
+
+    def __str__(self):
+        return f"{self.pet.nome} - {self.data_hora:%d/%m/%Y %H:%M}"
+
+    def save(self, *args, user=None, **kwargs):
+        """Propaga o usuário autenticado para created_by/updated_by."""
+        if user is not None and getattr(user, "is_authenticated", False):
+            if self._state.adding:
+                self.created_by = user
+            self.updated_by = user
+        return super().save(*args, **kwargs)

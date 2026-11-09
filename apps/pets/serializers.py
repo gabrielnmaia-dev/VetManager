@@ -3,7 +3,7 @@
 from rest_framework import serializers
 
 from apps.base.serializers import AuthoredModelSerializer, usuario_autenticado
-from .models import Especie, Raca, Pet, HistoricoResponsabilidadePet
+from .models import Especie, Raca, Pet, HistoricoResponsabilidadePet, MedicaoVital
 
 
 class EspecieSerializer(AuthoredModelSerializer):
@@ -229,3 +229,80 @@ class HistoricoResponsabilidadePetSerializer(serializers.ModelSerializer):
             "atualizado_em",
         ]
         read_only_fields = ["id", "criado_em", "atualizado_em"]
+
+
+class MedicaoVitalSerializer(serializers.ModelSerializer):
+    """Serializer de medições de sinais vitais de um pet.
+
+    Permite registrar peso, temperatura, frequência cardíaca, respiratória,
+    pressão arterial, saturação, glicemia, escore corporal e observações.
+    Nenhum campo de medição é obrigatório.
+    """
+
+    pet_nome = serializers.CharField(source="pet.nome", read_only=True)
+    profissional_nome = serializers.CharField(
+        source="profissional.nome", read_only=True
+    )
+    atendimento_id = serializers.CharField(
+        source="atendimento.id", read_only=True
+    )
+    prontuario_id = serializers.CharField(
+        source="prontuario.id", read_only=True
+    )
+
+    class Meta:
+        model = MedicaoVital
+        fields = [
+            "id",
+            "pet",
+            "pet_nome",
+            "atendimento",
+            "atendimento_id",
+            "prontuario",
+            "prontuario_id",
+            "profissional",
+            "profissional_nome",
+            "data_hora",
+            "peso",
+            "temperatura",
+            "frequencia_cardíaca",
+            "frequencia_respiratoria",
+            "pressao_arterial",
+            "saturacao",
+            "glicemia",
+            "escore_corporal",
+            "observacoes",
+            "criado_em",
+            "atualizado_em",
+        ]
+        read_only_fields = ["id", "criado_em", "atualizado_em"]
+
+    def validate_saturacao(self, value):
+        if value is not None and (value < 0 or value > 100):
+            raise serializers.ValidationError(
+                "A saturação de O2 deve estar entre 0 e 100."
+            )
+        return value
+
+    def validate(self, attrs):
+        # Pelo menos um campo de medição deve ser preenchido.
+        campos_medicao = [
+            "peso",
+            "temperatura",
+            "frequencia_cardíaca",
+            "frequencia_respiratoria",
+            "pressao_arterial",
+            "saturacao",
+            "glicemia",
+            "escore_corporal",
+        ]
+        if not any(attrs.get(campo) is not None for campo in campos_medicao):
+            raise serializers.ValidationError(
+                {
+                    "peso": [
+                        "Informe pelo menos um parâmetro de medição "
+                        "(peso, temperatura, frequência cardíaca, etc.)."
+                    ]
+                }
+            )
+        return attrs

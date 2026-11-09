@@ -7,6 +7,7 @@ from apps.pets.views import (
     EspecieViewSet,
     RacaViewSet,
     HistoricoResponsabilidadePetViewSet,
+    MedicaoVitalViewSet,
 )
 from apps.atendimentos.views import AtendimentoViewSet
 from apps.veterinarios.views import (
@@ -32,6 +33,11 @@ router.register(
     "historicos-responsabilidade-pet",
     HistoricoResponsabilidadePetViewSet,
     basename="historico-responsabilidade-pet",
+)
+router.register(
+    "medicoes-vitais",
+    MedicaoVitalViewSet,
+    basename="medicao-vital",
 )
 router.register("atendimentos", AtendimentoViewSet, basename="atendimento")
 router.register("profissionais", ProfissionalViewSet, basename="profissional")

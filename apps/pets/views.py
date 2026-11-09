@@ -5,7 +5,13 @@ from rest_framework import viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import Especie, Raca, Pet, HistoricoResponsabilidadePet
+from .models import (
+    Especie,
+    Raca,
+    Pet,
+    HistoricoResponsabilidadePet,
+    MedicaoVital,
+)
 from .serializers import (
     EspecieSerializer,
     RacaSerializer,
@@ -13,6 +19,7 @@ from .serializers import (
     PetResumoSerializer,
     PetCreateSerializer,
     HistoricoResponsabilidadePetSerializer,
+    MedicaoVitalSerializer,
 )
 from apps.base.views import AuditModelViewSetMixin
 
@@ -130,3 +137,59 @@ class HistoricoResponsabilidadePetViewSet(
     ordering = ["-data_inicio"]
     audit_entidade = "historico_responsabilidade_pet"
     role_policy = ("admin", "veterinario", "recepcao")
+
+
+class MedicaoVitalViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
+    """Medições de sinais vitais de pets.
+
+    Permite registrar e consultar medições de peso, temperatura, frequência
+    cardíaca, respiratória, pressão arterial, saturação, glicemia, escore
+    corporal e observações.
+    """
+
+    queryset = (
+        MedicaoVital.objects.select_related(
+            "pet", "pet__tutor", "profissional", "atendimento", "prontuario"
+        )
+        .all()
+    )
+    serializer_class = MedicaoVitalSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["pet", "profissional", "atendimento", "prontuario"]
+    search_fields = ["pet__nome", "observacoes"]
+    ordering_fields = ["data_hora", "peso", "temperatura"]
+    ordering = ["-data_hora"]
+    audit_entidade = "medicao_vital"
+    role_policy = ("admin", "veterinario", "recepcao")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        pet_id = self.request.query_params.get("pet")
+        if pet_id:
+            qs = qs.filter(pet_id=pet_id)
+        data_inicio = self.request.query_params.get("data_inicio")
+        if data_inicio:
+            qs = qs.filter(data_hora__gte=data_inicio)
+        data_fim = self.request.query_params.get("data_fim")
+        if data_fim:
+            qs = qs.filter(data_hora__lte=data_fim)
+        return qs
+
+    @action(detail=False, methods=["get"], url_path="ultima")
+    def ultima(self, request):
+        """Retorna a última medição de um pet."""
+        pet_id = request.query_params.get("pet")
+        if not pet_id:
+            return Response(
+                {"pet": ["Informe o parâmetro pet."]},
+                status=400,
+            )
+        ultima = (
+            self.get_queryset()
+            .filter(pet_id=pet_id)
+            .first()
+        )
+        if not ultima:
+            return Response({"detail": "Nenhuma medição encontrada."}, status=404)
+        serializer = self.get_serializer(ultima)
+        return Response(serializer.data)
