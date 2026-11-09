@@ -21,7 +21,11 @@ from apps.veterinarios.views import (
     AgendamentoRecorrenteViewSet,
     HistoricoStatusAtendimentoViewSet,
 )
-from apps.documentos.views import DocumentoClinicoViewSet
+from apps.documentos.views import (
+    DocumentoClinicoViewSet,
+    DocumentoVeterinarioViewSet,
+    ModeloDocumentoViewSet,
+)
 from apps.prontuario.views import ProntuarioViewSet, VacinaViewSet
 from apps.dashboard.views import DashboardView
 
@@ -41,6 +45,12 @@ router.register(
     basename="medicao-vital",
 )
 router.register("documentos-clinicos", DocumentoClinicoViewSet, basename="documento-clinico")
+router.register(
+    "documentos-veterinarios",
+    DocumentoVeterinarioViewSet,
+    basename="documento-veterinario",
+)
+router.register("modelos-documento", ModeloDocumentoViewSet, basename="modelo-documento")
 router.register("atendimentos", AtendimentoViewSet, basename="atendimento")
 router.register("profissionais", ProfissionalViewSet, basename="profissional")
 router.register("veterinarios", VeterinarioViewSet, basename="veterinario")

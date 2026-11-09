@@ -18,9 +18,27 @@ from .models import (
 
 
 class VeterinarioSerializer(serializers.ModelSerializer):
+    """Veterinário com identificação do profissional vinculado.
+
+    ``id`` e ``profissional_nome`` são necessários para selecionar o
+    responsável em telas que referenciam o veterinário (ex.: documentos
+    veterinários). São somente leitura.
+    """
+
+    profissional_nome = serializers.CharField(
+        source="profissional.nome", read_only=True
+    )
+
     class Meta:
         model = Veterinario
-        fields = ["crmv", "especialidade"]
+        fields = [
+            "id",
+            "profissional",
+            "profissional_nome",
+            "crmv",
+            "especialidade",
+        ]
+        read_only_fields = ["id", "profissional", "profissional_nome"]
 
 
 class ProfissionalSerializer(AuthoredModelSerializer):

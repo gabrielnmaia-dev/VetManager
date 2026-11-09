@@ -257,6 +257,18 @@ MEDIA_URL = '/media/'
 # Ajuste via variável de ambiente DOCUMENTO_TAMANHO_MAXIMO (em bytes).
 DOCUMENTO_TAMANHO_MAXIMO = env_int('DOCUMENTO_TAMANHO_MAXIMO', 10 * 1024 * 1024)
 
+# ---------- Identificação da clínica nos documentos gerados ----------
+# Dados meramente cadastrais, configuráveis por ambiente. Não são segredos.
+CLINICA_NOME = os.environ.get('CLINICA_NOME', 'VetManager')
+CLINICA_CNPJ = os.environ.get('CLINICA_CNPJ', '')
+CLINICA_ENDERECO = os.environ.get('CLINICA_ENDERECO', '')
+CLINICA_TELEFONE = os.environ.get('CLINICA_TELEFONE', '')
+CLINICA_EMAIL = os.environ.get('CLINICA_EMAIL', '')
+CLINICA_CIDADE = os.environ.get('CLINICA_CIDADE', '')
+# URL exibida no rodapé para conferência do identificador de autenticidade.
+# Se vazia, usa FRONTEND_URL/validar.
+DOCUMENTO_VERIFICACAO_URL = os.environ.get('DOCUMENTO_VERIFICACAO_URL', '')
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Limites de payload (mitiga abuso/DoS por requisições enormes).

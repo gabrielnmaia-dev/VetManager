@@ -52,7 +52,10 @@ class ProfissionalViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
 class VeterinarioViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
     """Cadastro de veterinários (CRMV, especialidade)."""
 
-    queryset = Veterinario.objects.select_related("profissional").all()
+    queryset = (
+        Veterinario.objects.select_related("profissional")
+        .order_by("profissional__nome")
+    )
     serializer_class = VeterinarioSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ["profissional__nome", "crmv", "especialidade"]
