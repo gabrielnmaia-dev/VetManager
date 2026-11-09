@@ -40,7 +40,8 @@ class ProfissionalViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
     filterset_fields = ["cargo", "ativo"]
     search_fields = ["nome", "cargo", "telefone"]
     audit_entidade = "profissional"
-    role_policy = ("admin", "veterinario", "recepcao")
+    # Gestão de funcionários restrita apenas ao perfil admin.
+    role_policy = ("admin",)
 
     def get_serializer_class(self):
         if self.action == "create":
