@@ -16,6 +16,8 @@ test_db.sqlite3
 .idea/
 postgres_data/
 backups/
+# Arquivos enviados em runtime (documentos clínicos, mídia). Nunca comitar.
+media/
 *.sql.gz
 *.pre-fix.*
 # Build do frontend (gerado por npm run build)

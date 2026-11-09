@@ -75,6 +75,7 @@ INSTALLED_APPS = [
     'apps.prontuario',
     'apps.dashboard',
     'apps.auditoria.apps.AuditoriaConfig',
+    'apps.documentos',
     'apps.base'
 ]
 
@@ -244,6 +245,17 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# ---------- Armazenamento de documentos clínicos ----------
+# Arquivos são armazenados em MEDIA_ROOT/documentos/ e servidos apenas via
+# endpoint autenticado (DocumentoClinicoViewSet.download). Nunca exponha
+# MEDIA_ROOT diretamente na web.
+MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_URL = '/media/'
+
+# Tamanho máximo de upload de documento (padrão: 10 MB).
+# Ajuste via variável de ambiente DOCUMENTO_TAMANHO_MAXIMO (em bytes).
+DOCUMENTO_TAMANHO_MAXIMO = env_int('DOCUMENTO_TAMANHO_MAXIMO', 10 * 1024 * 1024)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

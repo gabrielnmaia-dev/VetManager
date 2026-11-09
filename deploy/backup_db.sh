@@ -64,8 +64,31 @@ mv "$TMP" "$OUT"
 chmod 600 "$OUT"
 log "ok: $OUT ($(du -h "$OUT" | cut -f1))"
 
+# Backup dos arquivos clínicos (MEDIA_ROOT) montados no container web.
+MEDIA_OUT="$BACKUP_DIR/media_${TS}.tar.gz"
+MEDIA_TMP="$BACKUP_DIR/.media_${TS}.tar.gz.part"
+log "iniciando backup dos documentos clínicos (media)"
+if "$DOCKER" compose -f "$COMPOSE_FILE" exec -T web \
+      tar -czf - -C /app media 2>/dev/null >"$MEDIA_TMP"; then
+  if tar -tzf "$MEDIA_TMP" >/dev/null 2>&1; then
+    mv "$MEDIA_TMP" "$MEDIA_OUT"
+    chmod 600 "$MEDIA_OUT"
+    log "ok: $MEDIA_OUT ($(du -h "$MEDIA_OUT" | cut -f1))"
+  else
+    rm -f "$MEDIA_TMP"
+    log "AVISO: arquivo de media corrompido; backup do banco permanece valido"
+  fi
+else
+  rm -f "$MEDIA_TMP"
+  log "AVISO: falha ao arquivar media; backup do banco permanece valido"
+fi
+
 # Retencao dos dumps diarios por idade.
 find "$BACKUP_DIR" -maxdepth 1 -name 'vetmanager_*.sql.gz' -mtime +"$RETAIN_DAYS" -print0 \
+  | while IFS= read -r -d '' f; do rm -f "$f"; log "removido (mais de ${RETAIN_DAYS}d): $f"; done
+
+# Retencao dos arquivos de media por idade.
+find "$BACKUP_DIR" -maxdepth 1 -name 'media_*.tar.gz' -mtime +"$RETAIN_DAYS" -print0 \
   | while IFS= read -r -d '' f; do rm -f "$f"; log "removido (mais de ${RETAIN_DAYS}d): $f"; done
 
 # Mantem apenas os N ultimos pre-migration.
