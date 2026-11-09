@@ -8,8 +8,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.base.views import AuditModelViewSetMixin
-from .models import Prontuario, Vacina
-from .serializers import ProntuarioSerializer, VacinaSerializer
+from .models import Prontuario, Vacina, Vermifugacao
+from .serializers import (
+    ProntuarioSerializer,
+    VacinaSerializer,
+    VermifugacaoSerializer,
+)
 
 
 class ProntuarioViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
@@ -140,6 +144,101 @@ class VacinaViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
             em_dia=Count(
                 "id", filter=Q(data_retorno__gt=limite)
             ),
+            proxima=Count(
+                "id",
+                filter=Q(data_retorno__gte=hoje, data_retorno__lte=limite),
+            ),
+            atrasada=Count("id", filter=Q(data_retorno__lt=hoje)),
+            sem_retorno=Count("id", filter=Q(data_retorno__isnull=True)),
+        )
+        return Response(agregado)
+
+
+class VermifugacaoViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
+    """Registro de vermifugação por animal.
+
+    A recepção pode consultar o histórico; somente admin/veterinário criam,
+    editam ou excluem registros clínicos.
+    """
+
+    queryset = Vermifugacao.objects.select_related(
+        "pet__tutor", "prontuario", "veterinario__profissional"
+    ).all()
+    serializer_class = VermifugacaoSerializer
+    role_policy = {
+        "list": ("admin", "veterinario", "recepcao"),
+        "retrieve": ("admin", "veterinario", "recepcao"),
+        "resumo": ("admin", "veterinario", "recepcao"),
+        "create": ("admin", "veterinario"),
+        "update": ("admin", "veterinario"),
+        "partial_update": ("admin", "veterinario"),
+        "destroy": ("admin", "veterinario"),
+        "*": ("admin",),
+    }
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
+    filterset_fields = ["pet", "veterinario", "via_administracao"]
+    search_fields = [
+        "produto",
+        "principio_ativo",
+        "pet__nome",
+        "pet__tutor__nome",
+        "lote",
+    ]
+    ordering_fields = [
+        "data_aplicacao",
+        "data_retorno",
+        "produto",
+        "criado_em",
+    ]
+    ordering = ["-data_aplicacao", "-id"]
+    audit_entidade = "vermifugacao"
+
+    def _queryset_base(self):
+        """Filtros de animal e período, sem a situação calculada."""
+        qs = super().get_queryset()
+
+        pet_id = self.request.query_params.get("pet")
+        if pet_id:
+            qs = qs.filter(pet_id=pet_id)
+
+        data_inicio = self.request.query_params.get("data_inicio")
+        data_fim = self.request.query_params.get("data_fim")
+        if data_inicio:
+            qs = qs.filter(data_aplicacao__gte=data_inicio)
+        if data_fim:
+            qs = qs.filter(data_aplicacao__lte=data_fim)
+
+        return qs
+
+    def get_queryset(self):
+        qs = self._queryset_base()
+
+        situacao = self.request.query_params.get("situacao")
+        hoje = timezone.localdate()
+        limite = hoje + timedelta(days=Vermifugacao.DIAS_ALERTA_RETORNO)
+        if situacao == Vermifugacao.Situacao.ATRASADA:
+            qs = qs.filter(data_retorno__lt=hoje)
+        elif situacao == Vermifugacao.Situacao.PROXIMA:
+            qs = qs.filter(data_retorno__gte=hoje, data_retorno__lte=limite)
+        elif situacao == Vermifugacao.Situacao.EM_DIA:
+            qs = qs.filter(data_retorno__gt=limite)
+        elif situacao == Vermifugacao.Situacao.SEM_RETORNO:
+            qs = qs.filter(data_retorno__isnull=True)
+
+        return qs
+
+    @action(detail=False, methods=["get"])
+    def resumo(self, request):
+        """Contagem por situação, respeitando animal e período."""
+        hoje = timezone.localdate()
+        limite = hoje + timedelta(days=Vermifugacao.DIAS_ALERTA_RETORNO)
+        agregado = self._queryset_base().aggregate(
+            total=Count("id"),
+            em_dia=Count("id", filter=Q(data_retorno__gt=limite)),
             proxima=Count(
                 "id",
                 filter=Q(data_retorno__gte=hoje, data_retorno__lte=limite),

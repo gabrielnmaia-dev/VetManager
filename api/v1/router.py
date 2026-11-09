@@ -26,7 +26,11 @@ from apps.documentos.views import (
     DocumentoVeterinarioViewSet,
     ModeloDocumentoViewSet,
 )
-from apps.prontuario.views import ProntuarioViewSet, VacinaViewSet
+from apps.prontuario.views import (
+    ProntuarioViewSet,
+    VacinaViewSet,
+    VermifugacaoViewSet,
+)
 from apps.dashboard.views import DashboardView
 
 router = DefaultRouter()
@@ -71,6 +75,9 @@ router.register(
 )
 router.register("prontuarios", ProntuarioViewSet, basename="prontuario")
 router.register("vacinas", VacinaViewSet, basename="vacina")
+router.register(
+    "vermifugacoes", VermifugacaoViewSet, basename="vermifugacao"
+)
 
 urlpatterns = router.urls + [
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
