@@ -57,6 +57,15 @@ from apps.procedimentos.views import (
     ExecucaoProcedimentoViewSet,
     ProcedimentoViewSet,
 )
+from apps.internacao.views import (
+    AdministracaoMedicamentoInternacaoViewSet,
+    CuidadoInternacaoViewSet,
+    EvolucaoInternacaoViewSet,
+    InternacaoCentralView,
+    InternacaoViewSet,
+    LeitoViewSet,
+    OcupacaoLeitoViewSet,
+)
 
 router = DefaultRouter()
 router.register("tutores", TutorViewSet, basename="tutor")
@@ -137,8 +146,35 @@ router.register(
     ExecucaoProcedimentoViewSet,
     basename="execucao-procedimento",
 )
+router.register("leitos", LeitoViewSet, basename="leito")
+router.register(
+    "ocupacoes-leito",
+    OcupacaoLeitoViewSet,
+    basename="ocupacao-leito",
+)
+router.register("internacoes", InternacaoViewSet, basename="internacao")
+router.register(
+    "evolucoes-internacao",
+    EvolucaoInternacaoViewSet,
+    basename="evolucao-internacao",
+)
+router.register(
+    "cuidados-internacao",
+    CuidadoInternacaoViewSet,
+    basename="cuidado-internacao",
+)
+router.register(
+    "administracoes-internacao",
+    AdministracaoMedicamentoInternacaoViewSet,
+    basename="administracao-internacao",
+)
 
 urlpatterns = router.urls + [
+    path(
+        "internacao/central/",
+        InternacaoCentralView.as_view(),
+        name="internacao-central",
+    ),
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
     path("estoque/dashboard/", EstoqueDashboardView.as_view(), name="estoque-dashboard"),
     path("estoque/alertas/", EstoqueAlertasView.as_view(), name="estoque-alertas"),

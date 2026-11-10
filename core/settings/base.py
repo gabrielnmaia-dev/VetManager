@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     'apps.estoque.apps.EstoqueConfig',
     'apps.prescricao.apps.PrescricaoConfig',
     'apps.procedimentos.apps.ProcedimentosConfig',
+    'apps.internacao.apps.InternacaoConfig',
     'apps.base'
 ]
 
