@@ -37,7 +37,17 @@ from apps.dashboard.views import (
     DashboardOperacionalView,
     DashboardView,
 )
-from apps.estoque.views import CategoriaProdutoViewSet, ProdutoViewSet
+from apps.estoque.views import (
+    CategoriaProdutoViewSet,
+    EstoqueAlertasView,
+    EstoqueDashboardView,
+    FornecedorViewSet,
+    InventarioViewSet,
+    ItemInventarioViewSet,
+    LoteViewSet,
+    MovimentacaoEstoqueViewSet,
+    ProdutoViewSet,
+)
 
 router = DefaultRouter()
 router.register("tutores", TutorViewSet, basename="tutor")
@@ -90,9 +100,22 @@ router.register(
     basename="categoria-produto",
 )
 router.register("produtos", ProdutoViewSet, basename="produto")
+router.register("fornecedores", FornecedorViewSet, basename="fornecedor")
+router.register("lotes", LoteViewSet, basename="lote")
+router.register(
+    "movimentacoes-estoque",
+    MovimentacaoEstoqueViewSet,
+    basename="movimentacao-estoque",
+)
+router.register("inventarios", InventarioViewSet, basename="inventario")
+router.register(
+    "itens-inventario", ItemInventarioViewSet, basename="item-inventario"
+)
 
 urlpatterns = router.urls + [
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
+    path("estoque/dashboard/", EstoqueDashboardView.as_view(), name="estoque-dashboard"),
+    path("estoque/alertas/", EstoqueAlertasView.as_view(), name="estoque-alertas"),
     path(
         "dashboard/operacional/",
         DashboardOperacionalView.as_view(),

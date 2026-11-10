@@ -366,3 +366,570 @@ class ProdutoPermissaoTests(BaseCatalogoTestCase):
                 usuario=self.admin,
             ).exists()
         )
+
+
+# ---------------------------------------------------------------------------
+# Estoque clínico: saldo, FEFO, lotes, movimentações, inventário e alertas.
+# ---------------------------------------------------------------------------
+
+from datetime import timedelta
+from decimal import Decimal
+
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
+from rest_framework.exceptions import ValidationError as DRFValidationError
+
+from . import services
+from .models import Fornecedor, Inventario, ItemInventario, Lote, MovimentacaoEstoque
+
+URL_LOTES = "/api/v1/lotes/"
+URL_FORNECEDORES = "/api/v1/fornecedores/"
+URL_MOVIMENTACOES = "/api/v1/movimentacoes-estoque/"
+URL_INVENTARIOS = "/api/v1/inventarios/"
+URL_ITENS_INVENTARIO = "/api/v1/itens-inventario/"
+URL_ESTOQUE_DASHBOARD = "/api/v1/estoque/dashboard/"
+URL_ESTOQUE_ALERTAS = "/api/v1/estoque/alertas/"
+
+
+class BaseEstoqueTestCase(BaseCatalogoTestCase):
+    def setUp(self):
+        super().setUp()
+        self.produto = Produto.objects.create(
+            nome="Dipirona 500 mg/ml",
+            categoria=self.cat_medicamento,
+            codigo_interno="MED-EST-001",
+            tipo_estoque=Produto.TipoEstoque.CLINICO,
+            unidade_medida=Produto.UnidadeMedida.ML,
+            principio_ativo="Dipirona sódica",
+            concentracao="500 mg/ml",
+            forma_farmaceutica=Produto.FormaFarmaceutica.SOLUCAO,
+            unidade_dispensacao=Produto.UnidadeDispensacao.ML,
+            estoque_minimo=Decimal("5"),
+        )
+        self.fornecedor = Fornecedor.objects.create(
+            nome="Fornecedor Central",
+            cnpj="12.345.678/0001-10",
+        )
+        self.lote = self.criar_lote("L-001", "10", validade_dias=180)
+
+    def criar_lote(
+        self,
+        numero,
+        quantidade="0",
+        validade_dias=180,
+        *,
+        produto=None,
+        usuario=None,
+        **kwargs,
+    ):
+        validade = (
+            None
+            if validade_dias is None
+            else timezone.localdate() + timedelta(days=validade_dias)
+        )
+        return services.criar_lote(
+            produto=produto or self.produto,
+            numero_lote=numero,
+            quantidade_inicial=Decimal(quantidade),
+            data_validade=validade,
+            fornecedor=kwargs.pop("fornecedor", self.fornecedor),
+            usuario=usuario or self.admin,
+            **kwargs,
+        )
+
+    def criar_produto(self, codigo, *, tipo_estoque=Produto.TipoEstoque.CLINICO, **kwargs):
+        dados = {
+            "nome": f"Produto {codigo}",
+            "categoria": self.cat_material,
+            "codigo_interno": codigo,
+            "tipo_estoque": tipo_estoque,
+            "unidade_medida": Produto.UnidadeMedida.UNIDADE,
+        }
+        dados.update(kwargs)
+        return Produto.objects.create(**dados)
+
+
+class MovimentacaoEstoqueServiceTests(BaseEstoqueTestCase):
+    def test_criar_lote_com_saldo_inicial_registra_entrada(self):
+        mov = MovimentacaoEstoque.objects.get(lote=self.lote)
+        self.assertEqual(mov.tipo, MovimentacaoEstoque.Tipo.ENTRADA)
+        self.assertEqual(mov.quantidade, Decimal("10"))
+        self.assertEqual(mov.saldo_anterior, Decimal("0"))
+        self.assertEqual(mov.saldo_posterior, Decimal("10"))
+        self.assertEqual(self.lote.quantidade_atual, Decimal("10"))
+
+    def test_criar_lote_sem_saldo_nao_gera_movimentacao(self):
+        lote = self.criar_lote("L-ZERO", "0")
+        self.assertEqual(lote.quantidade_atual, Decimal("0"))
+        self.assertFalse(lote.movimentacoes.exists())
+
+    def test_entrada_soma_saldo_e_registra_saldos(self):
+        mov = services.registrar_entrada(
+            produto=self.produto,
+            lote=self.lote,
+            quantidade=Decimal("5"),
+            usuario=self.vet,
+        )
+        self.lote.refresh_from_db()
+        self.assertEqual(self.lote.quantidade_atual, Decimal("15"))
+        self.assertEqual(mov.saldo_anterior, Decimal("10"))
+        self.assertEqual(mov.saldo_posterior, Decimal("15"))
+        self.assertEqual(mov.created_by, self.vet)
+
+    def test_saida_com_lote_explicito_baixa_saldo(self):
+        movs = services.registrar_saida(
+            produto=self.produto,
+            lote=self.lote,
+            quantidade=Decimal("3"),
+            usuario=self.vet,
+        )
+        self.lote.refresh_from_db()
+        self.assertEqual(len(movs), 1)
+        self.assertEqual(self.lote.quantidade_atual, Decimal("7"))
+        self.assertEqual(movs[0].saldo_anterior, Decimal("10"))
+        self.assertEqual(movs[0].saldo_posterior, Decimal("7"))
+
+    def test_saida_sem_lote_aplica_fefo(self):
+        produto = self.criar_produto("FEFO-001")
+        lote_longe = self.criar_lote(
+            "FEFO-LONGE", "5", validade_dias=120, produto=produto
+        )
+        lote_perto = self.criar_lote(
+            "FEFO-PERTO", "4", validade_dias=10, produto=produto
+        )
+        lote_sem_validade = self.criar_lote(
+            "FEFO-SEM", "5", validade_dias=None, produto=produto
+        )
+
+        movs = services.registrar_saida(
+            produto=produto,
+            quantidade=Decimal("6"),
+            usuario=self.vet,
+        )
+
+        self.assertEqual(len(movs), 2)
+        self.assertEqual(movs[0].lote_id, lote_perto.id)
+        self.assertEqual(movs[0].quantidade, Decimal("4"))
+        self.assertEqual(movs[1].lote_id, lote_longe.id)
+        self.assertEqual(movs[1].quantidade, Decimal("2"))
+        lote_perto.refresh_from_db()
+        lote_longe.refresh_from_db()
+        lote_sem_validade.refresh_from_db()
+        self.assertEqual(lote_perto.quantidade_atual, Decimal("0"))
+        self.assertEqual(lote_longe.quantidade_atual, Decimal("3"))
+        self.assertEqual(lote_sem_validade.quantidade_atual, Decimal("5"))
+
+    def test_saida_sem_saldo_suficiente_faz_rollback_total(self):
+        antes = MovimentacaoEstoque.objects.count()
+        with self.assertRaises(DRFValidationError):
+            services.registrar_saida(
+                produto=self.produto,
+                quantidade=Decimal("999"),
+                usuario=self.vet,
+            )
+        self.lote.refresh_from_db()
+        self.assertEqual(self.lote.quantidade_atual, Decimal("10"))
+        self.assertEqual(MovimentacaoEstoque.objects.count(), antes)
+
+    def test_lote_vencido_nao_permite_saida_nem_consumo(self):
+        vencido = self.criar_lote("L-VENC", "3", validade_dias=-2)
+        for tipo in (
+            MovimentacaoEstoque.Tipo.SAIDA,
+            MovimentacaoEstoque.Tipo.CONSUMO_CLINICO,
+        ):
+            with self.assertRaises(DRFValidationError):
+                services.registrar_saida(
+                    produto=self.produto,
+                    lote=vencido,
+                    quantidade=Decimal("1"),
+                    tipo=tipo,
+                    usuario=self.vet,
+                )
+        vencido.refresh_from_db()
+        self.assertEqual(vencido.quantidade_atual, Decimal("3"))
+
+    def test_lote_vencido_pode_ser_baixado_por_vencimento(self):
+        vencido = self.criar_lote("L-VENC2", "3", validade_dias=-2)
+        services.registrar_saida(
+            produto=self.produto,
+            lote=vencido,
+            quantidade=Decimal("3"),
+            tipo=MovimentacaoEstoque.Tipo.VENCIMENTO,
+            usuario=self.vet,
+        )
+        vencido.refresh_from_db()
+        self.assertEqual(vencido.quantidade_atual, Decimal("0"))
+
+    def test_fefo_ignora_lote_vencido(self):
+        produto = self.criar_produto("FEFO-VENC")
+        self.criar_lote("VENC", "9", validade_dias=-1, produto=produto)
+        valido = self.criar_lote("VALIDO", "4", validade_dias=60, produto=produto)
+
+        movs = services.registrar_saida(
+            produto=produto, quantidade=Decimal("4"), usuario=self.vet
+        )
+        self.assertEqual(len(movs), 1)
+        self.assertEqual(movs[0].lote_id, valido.id)
+
+    def test_ajuste_exige_motivo(self):
+        with self.assertRaises(DRFValidationError):
+            services.registrar_ajuste(
+                produto=self.produto,
+                lote=self.lote,
+                quantidade=Decimal("1"),
+                direcao=MovimentacaoEstoque.Direcao.SAIDA,
+                motivo="   ",
+                usuario=self.vet,
+            )
+
+    def test_ajuste_de_entrada_e_saida(self):
+        services.registrar_ajuste(
+            produto=self.produto,
+            lote=self.lote,
+            quantidade=Decimal("2"),
+            direcao=MovimentacaoEstoque.Direcao.ENTRADA,
+            motivo="Correção de contagem",
+            usuario=self.vet,
+        )
+        self.lote.refresh_from_db()
+        self.assertEqual(self.lote.quantidade_atual, Decimal("12"))
+
+        services.registrar_ajuste(
+            produto=self.produto,
+            lote=self.lote,
+            quantidade=Decimal("5"),
+            direcao=MovimentacaoEstoque.Direcao.SAIDA,
+            motivo="Correção de contagem",
+            usuario=self.vet,
+        )
+        self.lote.refresh_from_db()
+        self.assertEqual(self.lote.quantidade_atual, Decimal("7"))
+
+    def test_ajuste_nao_deixa_saldo_negativo(self):
+        with self.assertRaises(DRFValidationError):
+            services.registrar_ajuste(
+                produto=self.produto,
+                lote=self.lote,
+                quantidade=Decimal("11"),
+                direcao=MovimentacaoEstoque.Direcao.SAIDA,
+                motivo="Ajuste indevido",
+                usuario=self.vet,
+            )
+        self.lote.refresh_from_db()
+        self.assertEqual(self.lote.quantidade_atual, Decimal("10"))
+
+    def test_produto_sem_controle_de_estoque_nao_movimenta(self):
+        produto = self.criar_produto("SEM-CTRL", controla_estoque=False)
+        lote = Lote.objects.create(
+            produto=produto,
+            numero_lote="SEM-1",
+            quantidade_inicial=Decimal("0"),
+            quantidade_atual=Decimal("0"),
+        )
+        with self.assertRaises(DRFValidationError):
+            services.registrar_entrada(
+                produto=produto,
+                lote=lote,
+                quantidade=Decimal("1"),
+                usuario=self.vet,
+            )
+
+
+class MovimentacaoImutavelTests(BaseEstoqueTestCase):
+    def test_movimentacao_nao_pode_ser_alterada(self):
+        mov = MovimentacaoEstoque.objects.get(lote=self.lote)
+        mov.quantidade = Decimal("1")
+        with self.assertRaises(DjangoValidationError):
+            mov.save()
+
+    def test_movimentacao_nao_pode_ser_excluida(self):
+        mov = MovimentacaoEstoque.objects.get(lote=self.lote)
+        with self.assertRaises(DjangoValidationError):
+            mov.delete()
+        with self.assertRaises(DjangoValidationError):
+            mov.soft_delete(user=self.admin)
+        with self.assertRaises(DjangoValidationError):
+            mov.hard_delete()
+
+    def test_api_nao_permite_editar_ou_excluir_movimentacao(self):
+        mov = MovimentacaoEstoque.objects.get(lote=self.lote)
+        self.client.force_authenticate(self.admin)
+        # O viewset é somente leitura; a política de papéis barra antes mesmo
+        # do roteamento do método (403) e, se não barrasse, seria 405.
+        resp = self.client.put(
+            f"{URL_MOVIMENTACOES}{mov.id}/", {}, format="json"
+        )
+        self.assertIn(resp.status_code, (403, 405))
+        resp = self.client.delete(f"{URL_MOVIMENTACOES}{mov.id}/")
+        self.assertIn(resp.status_code, (403, 405))
+
+
+class InventarioTests(BaseEstoqueTestCase):
+    def test_abrir_inventario_congela_saldo_dos_lotes(self):
+        inv = services.abrir_inventario(
+            tipo_estoque=Produto.TipoEstoque.CLINICO, usuario=self.admin
+        )
+        item = ItemInventario.objects.get(inventario=inv, lote=self.lote)
+        self.assertEqual(item.quantidade_sistema, Decimal("10"))
+        self.assertEqual(item.quantidade_contada, Decimal("10"))
+        self.assertEqual(inv.status, Inventario.Status.ABERTO)
+
+    def test_finalizar_inventario_aplica_ajuste_e_movimentacao(self):
+        inv = services.abrir_inventario(
+            tipo_estoque=Produto.TipoEstoque.CLINICO, usuario=self.admin
+        )
+        item = ItemInventario.objects.get(inventario=inv, lote=self.lote)
+        item.quantidade_contada = Decimal("7")
+        item.save(user=self.admin)
+
+        inv = services.finalizar_inventario(inventario_id=inv.id, usuario=self.vet)
+
+        self.lote.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(self.lote.quantidade_atual, Decimal("7"))
+        self.assertEqual(inv.status, Inventario.Status.FINALIZADO)
+        self.assertEqual(inv.finalizado_por, self.vet)
+        self.assertIsNotNone(inv.finalizado_em)
+        self.assertIsNotNone(item.movimentacao_id)
+        self.assertEqual(item.diferenca, Decimal("-3"))
+        mov = item.movimentacao
+        self.assertEqual(mov.tipo, MovimentacaoEstoque.Tipo.AJUSTE)
+        self.assertEqual(mov.direcao, MovimentacaoEstoque.Direcao.SAIDA)
+        self.assertEqual(mov.quantidade, Decimal("3"))
+
+    def test_inventario_recalcula_saldo_na_finalizacao(self):
+        inv = services.abrir_inventario(
+            tipo_estoque=Produto.TipoEstoque.CLINICO, usuario=self.admin
+        )
+        services.registrar_saida(
+            produto=self.produto,
+            lote=self.lote,
+            quantidade=Decimal("4"),
+            usuario=self.vet,
+        )
+        item = ItemInventario.objects.get(inventario=inv, lote=self.lote)
+        item.quantidade_contada = Decimal("6")
+        item.save(user=self.admin)
+
+        services.finalizar_inventario(inventario_id=inv.id, usuario=self.vet)
+
+        self.lote.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(item.quantidade_sistema, Decimal("6"))
+        self.assertEqual(item.diferenca, Decimal("0"))
+        self.assertIsNone(item.movimentacao_id)
+        self.assertEqual(self.lote.quantidade_atual, Decimal("6"))
+
+    def test_inventario_finalizado_nao_pode_ser_finalizado_de_novo(self):
+        inv = services.abrir_inventario(
+            tipo_estoque=Produto.TipoEstoque.CLINICO, usuario=self.admin
+        )
+        services.finalizar_inventario(inventario_id=inv.id, usuario=self.admin)
+        with self.assertRaises(DRFValidationError):
+            services.finalizar_inventario(inventario_id=inv.id, usuario=self.admin)
+
+    def test_cancelar_inventario_aberto(self):
+        inv = services.abrir_inventario(
+            tipo_estoque=Produto.TipoEstoque.CLINICO, usuario=self.admin
+        )
+        inv = services.cancelar_inventario(inventario_id=inv.id, usuario=self.admin)
+        self.assertEqual(inv.status, Inventario.Status.CANCELADO)
+        with self.assertRaises(DRFValidationError):
+            services.finalizar_inventario(inventario_id=inv.id, usuario=self.admin)
+
+    def test_inventario_api_cria_lista_e_finaliza(self):
+        self.client.force_authenticate(self.vet)
+        resp = self.client.post(
+            URL_INVENTARIOS,
+            {"tipo_estoque": Produto.TipoEstoque.CLINICO, "observacoes": "Mensal"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.data)
+        inv_id = resp.data["id"]
+
+        item = ItemInventario.objects.get(inventario_id=inv_id, lote=self.lote)
+        resp = self.client.patch(
+            f"{URL_ITENS_INVENTARIO}{item.id}/",
+            {"quantidade_contada": "8"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+
+        resp = self.client.post(f"{URL_INVENTARIOS}{inv_id}/finalizar/", {}, format="json")
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.lote.refresh_from_db()
+        self.assertEqual(self.lote.quantidade_atual, Decimal("8"))
+
+
+class AlertaEstoqueTests(BaseEstoqueTestCase):
+    def test_alerta_de_estoque_minimo(self):
+        produto = self.criar_produto("MIN-001", estoque_minimo=Decimal("5"))
+        self.criar_lote("MIN-L1", "2", produto=produto)
+        alertas = services.alertas_estoque()
+        ids = [item["id"] for item in alertas["estoque_minimo"]]
+        self.assertIn(str(produto.id), ids)
+        item = next(i for i in alertas["estoque_minimo"] if i["id"] == str(produto.id))
+        self.assertEqual(item["saldo_total"], Decimal("2"))
+        self.assertEqual(item["faltando"], Decimal("3"))
+
+    def test_produto_com_saldo_acima_do_minimo_nao_alerta(self):
+        alertas = services.alertas_estoque()
+        ids = [item["id"] for item in alertas["estoque_minimo"]]
+        self.assertNotIn(str(self.produto.id), ids)
+
+    def test_alerta_de_lotes_vencidos_e_vencendo(self):
+        vencido = self.criar_lote("AL-VENC", "1", validade_dias=-1)
+        vencendo = self.criar_lote("AL-PROX", "1", validade_dias=10)
+        alertas = services.alertas_estoque()
+        ids_vencidos = [item["id"] for item in alertas["lotes_vencidos"]]
+        ids_vencendo = [item["id"] for item in alertas["lotes_vencendo"]]
+        self.assertIn(str(vencido.id), ids_vencidos)
+        self.assertIn(str(vencendo.id), ids_vencendo)
+        self.assertEqual(alertas["totais"]["lotes_vencidos"], 1)
+        self.assertEqual(alertas["totais"]["lotes_vencendo"], 1)
+
+    def test_lote_sem_validade_nao_entra_nos_alertas_de_validade(self):
+        sem_validade = self.criar_lote("AL-SEM", "1", validade_dias=None)
+        alertas = services.alertas_estoque()
+        ids = [
+            item["id"]
+            for item in alertas["lotes_vencidos"] + alertas["lotes_vencendo"]
+        ]
+        self.assertNotIn(str(sem_validade.id), ids)
+
+    def test_dashboard_consolida_clinico_e_comercial(self):
+        comercial = self.criar_produto(
+            "COM-001", tipo_estoque=Produto.TipoEstoque.COMERCIAL
+        )
+        self.criar_lote("COM-L1", "3", produto=comercial)
+        resumo = services.resumo_estoque()
+        self.assertGreaterEqual(
+            resumo["por_tipo"][Produto.TipoEstoque.CLINICO]["quantidade"],
+            Decimal("10"),
+        )
+        self.assertEqual(
+            resumo["por_tipo"][Produto.TipoEstoque.COMERCIAL]["quantidade"],
+            Decimal("3"),
+        )
+        self.assertTrue(resumo["movimentacoes_recentes"])
+
+
+class EstoquePermissoesTests(BaseEstoqueTestCase):
+    def test_recepcao_le_estoque_mas_nao_movimenta(self):
+        self.client.force_authenticate(self.rec)
+        self.assertEqual(self.client.get(URL_LOTES).status_code, 200)
+        self.assertEqual(self.client.get(URL_MOVIMENTACOES).status_code, 200)
+        self.assertEqual(self.client.get(URL_ESTOQUE_DASHBOARD).status_code, 200)
+        self.assertEqual(self.client.get(URL_ESTOQUE_ALERTAS).status_code, 200)
+        resp = self.client.post(
+            f"{URL_MOVIMENTACOES}entrada/",
+            {
+                "produto": str(self.produto.id),
+                "lote": str(self.lote.id),
+                "quantidade": "1",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_veterinario_pode_registrar_entrada_e_saida(self):
+        self.client.force_authenticate(self.vet)
+        resp = self.client.post(
+            f"{URL_MOVIMENTACOES}entrada/",
+            {
+                "produto": str(self.produto.id),
+                "lote": str(self.lote.id),
+                "quantidade": "2",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data["tipo"], MovimentacaoEstoque.Tipo.ENTRADA)
+
+        resp = self.client.post(
+            f"{URL_MOVIMENTACOES}saida/",
+            {
+                "produto": str(self.produto.id),
+                "quantidade": "5",
+                "tipo": MovimentacaoEstoque.Tipo.SAIDA,
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(len(resp.data), 1)
+        self.lote.refresh_from_db()
+        self.assertEqual(self.lote.quantidade_atual, Decimal("7"))
+
+    def test_usuario_anonimo_nao_acessa_estoque(self):
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.get(URL_LOTES).status_code, 401)
+        self.assertEqual(self.client.get(URL_ESTOQUE_DASHBOARD).status_code, 401)
+
+    def test_quantidade_atual_e_somente_leitura_na_api(self):
+        self.client.force_authenticate(self.vet)
+        resp = self.client.patch(
+            f"{URL_LOTES}{self.lote.id}/",
+            {"quantidade_atual": "999", "fabricante": "Novo fabricante"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.lote.refresh_from_db()
+        self.assertEqual(self.lote.quantidade_atual, Decimal("10"))
+        self.assertEqual(self.lote.fabricante, "Novo fabricante")
+
+    def test_nao_exclui_lote_com_saldo(self):
+        self.client.force_authenticate(self.vet)
+        resp = self.client.delete(f"{URL_LOTES}{self.lote.id}/")
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(Lote.objects.filter(pk=self.lote.pk).exists())
+
+    def test_api_cria_lote_com_saldo_inicial(self):
+        self.client.force_authenticate(self.vet)
+        resp = self.client.post(
+            URL_LOTES,
+            {
+                "produto": str(self.produto.id),
+                "numero_lote": "L-API-1",
+                "data_validade": str(timezone.localdate() + timedelta(days=90)),
+                "quantidade_inicial": "6",
+                "custo_aquisicao": "1.50",
+                "fornecedor": str(self.fornecedor.id),
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.data)
+        lote = Lote.objects.get(pk=resp.data["id"])
+        self.assertEqual(lote.quantidade_atual, Decimal("6"))
+        self.assertEqual(
+            lote.movimentacoes.get().tipo, MovimentacaoEstoque.Tipo.ENTRADA
+        )
+
+    def test_api_impede_numero_de_lote_duplicado_no_produto(self):
+        self.client.force_authenticate(self.vet)
+        resp = self.client.post(
+            URL_LOTES,
+            {
+                "produto": str(self.produto.id),
+                "numero_lote": "l-001",
+                "data_validade": str(timezone.localdate() + timedelta(days=90)),
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("numero_lote", resp.data)
+
+    def test_fornecedor_crud_e_cnpj_duplicado(self):
+        self.client.force_authenticate(self.vet)
+        resp = self.client.post(
+            URL_FORNECEDORES,
+            {"nome": "Fornecedor Novo", "cnpj": "98.765.432/0001-10"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.data)
+        duplicado = self.client.post(
+            URL_FORNECEDORES,
+            {"nome": "Outro", "cnpj": "98.765.432/0001-10"},
+            format="json",
+        )
+        self.assertEqual(duplicado.status_code, 400)
+        self.assertIn("cnpj", duplicado.data)

@@ -10,9 +10,12 @@ produto. Assim, o consumo de um medicamento nunca se confunde com a venda de
 um produto de prateleira, mesmo que os dois usem o mesmo cadastro básico.
 """
 
+from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Lower
+from django.utils import timezone
 
 from apps.base.models import BaseModel
 
@@ -152,6 +155,14 @@ class Produto(BaseModel):
         db_index=True,
         verbose_name="tipo de estoque",
     )
+    estoque_minimo = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        default=0,
+        verbose_name="estoque mínimo",
+        help_text="Saldo total a partir do qual o produto entra em alerta.",
+    )
+
     controla_estoque = models.BooleanField(
         default=True,
         verbose_name="controla estoque",
@@ -239,6 +250,394 @@ class Produto(BaseModel):
                 if not str(valor or "").strip():
                     erros[campo] = mensagem
             if erros:
-                from django.core.exceptions import ValidationError
-
                 raise ValidationError(erros)
+
+
+class Fornecedor(BaseModel):
+    """Fornecedor de produtos e lotes."""
+
+    nome = models.CharField(max_length=150, verbose_name="nome")
+    razao_social = models.CharField(
+        max_length=200, blank=True, verbose_name="razão social"
+    )
+    cnpj = models.CharField(max_length=18, blank=True, verbose_name="CNPJ")
+    telefone = models.CharField(max_length=30, blank=True, verbose_name="telefone")
+    email = models.EmailField(blank=True, verbose_name="e-mail")
+    endereco = models.TextField(blank=True, verbose_name="endereço")
+    observacoes = models.TextField(blank=True, verbose_name="observações")
+    ativo = models.BooleanField(default=True, verbose_name="ativo")
+
+    class Meta:
+        ordering = ["nome"]
+        verbose_name = "fornecedor"
+        verbose_name_plural = "fornecedores"
+        constraints = [
+            models.UniqueConstraint(
+                Lower("cnpj"),
+                condition=Q(is_deleted=False) & ~Q(cnpj=""),
+                name="uniq_fornecedor_cnpj_ativo",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.nome
+
+
+class Lote(BaseModel):
+    """Lote físico de um produto, com saldo e rastreabilidade.
+
+    ``quantidade_atual`` é mantida exclusivamente pelas movimentações
+    (entradas, saídas, ajustes e inventários). Ela nunca é aceita em payloads
+    da API para evitar divergência entre o saldo e o histórico.
+    """
+
+    produto = models.ForeignKey(
+        Produto,
+        on_delete=models.PROTECT,
+        related_name="lotes",
+        verbose_name="produto",
+    )
+    numero_lote = models.CharField(max_length=80, verbose_name="número do lote")
+    fabricante = models.CharField(
+        max_length=120, blank=True, verbose_name="fabricante"
+    )
+    data_fabricacao = models.DateField(
+        null=True, blank=True, verbose_name="data de fabricação"
+    )
+    data_validade = models.DateField(
+        null=True, blank=True, verbose_name="validade"
+    )
+    quantidade_inicial = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        default=0,
+        verbose_name="quantidade inicial",
+    )
+    quantidade_atual = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        default=0,
+        editable=False,
+        verbose_name="quantidade atual",
+    )
+    custo_aquisicao = models.DecimalField(
+        max_digits=12,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="custo de aquisição",
+    )
+    fornecedor = models.ForeignKey(
+        Fornecedor,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="lotes",
+        verbose_name="fornecedor",
+    )
+    observacoes = models.TextField(blank=True, verbose_name="observações")
+
+    class Meta:
+        ordering = ["data_validade", "numero_lote"]
+        verbose_name = "lote"
+        verbose_name_plural = "lotes"
+        indexes = [
+            models.Index(
+                fields=["produto", "data_validade"],
+                name="idx_lote_produto_validade",
+            ),
+            models.Index(fields=["data_validade"], name="idx_lote_validade"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                "produto",
+                Lower("numero_lote"),
+                condition=Q(is_deleted=False),
+                name="uniq_lote_produto_numero_ativo",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.produto.nome} — lote {self.numero_lote}"
+
+    @property
+    def esta_vencido(self) -> bool:
+        return bool(
+            self.data_validade and self.data_validade < timezone.localdate()
+        )
+
+    @property
+    def dias_para_vencer(self) -> int | None:
+        if not self.data_validade:
+            return None
+        return (self.data_validade - timezone.localdate()).days
+
+    @property
+    def status_validade(self) -> str:
+        """Classificação usada nos alertas e na interface."""
+        if not self.data_validade:
+            return "sem_validade"
+        dias = self.dias_para_vencer
+        if dias is not None and dias < 0:
+            return "vencido"
+        if dias is not None and dias <= 30:
+            return "vencendo"
+        return "ok"
+
+    @property
+    def valor_em_estoque(self):
+        custo = self.custo_aquisicao or 0
+        return (self.quantidade_atual or 0) * custo
+
+
+class MovimentacaoEstoque(BaseModel):
+    """Livro-razão imutável de toda alteração de saldo.
+
+    Não há update nem delete: correções são feitas por uma nova movimentação
+    de ajuste, preservando a trilha completa. O saldo anterior/posterior é
+    gravado em cada linha para auditoria mesmo que o lote seja alterado depois.
+    """
+
+    class Tipo(models.TextChoices):
+        ENTRADA = "entrada", "Entrada"
+        SAIDA = "saida", "Saída"
+        CONSUMO_CLINICO = "consumo_clinico", "Consumo clínico"
+        PERDA = "perda", "Perda"
+        VENCIMENTO = "vencimento", "Vencimento"
+        AJUSTE = "ajuste", "Ajuste"
+        DEVOLUCAO = "devolucao", "Devolução"
+
+    class Direcao(models.TextChoices):
+        ENTRADA = "entrada", "Entrada"
+        SAIDA = "saida", "Saída"
+
+    produto = models.ForeignKey(
+        Produto,
+        on_delete=models.PROTECT,
+        related_name="movimentacoes",
+        verbose_name="produto",
+    )
+    lote = models.ForeignKey(
+        Lote,
+        on_delete=models.PROTECT,
+        related_name="movimentacoes",
+        verbose_name="lote",
+    )
+    tipo = models.CharField(
+        max_length=30, choices=Tipo.choices, db_index=True, verbose_name="tipo"
+    )
+    direcao = models.CharField(
+        max_length=10,
+        choices=Direcao.choices,
+        db_index=True,
+        verbose_name="direção",
+    )
+    quantidade = models.DecimalField(
+        max_digits=12, decimal_places=3, verbose_name="quantidade"
+    )
+    saldo_anterior = models.DecimalField(
+        max_digits=12, decimal_places=3, verbose_name="saldo anterior"
+    )
+    saldo_posterior = models.DecimalField(
+        max_digits=12, decimal_places=3, verbose_name="saldo posterior"
+    )
+    motivo = models.CharField(max_length=255, blank=True, verbose_name="motivo")
+    atendimento = models.ForeignKey(
+        "atendimentos.Atendimento",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movimentacoes_estoque",
+        verbose_name="atendimento",
+    )
+    fornecedor = models.ForeignKey(
+        Fornecedor,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movimentacoes",
+        verbose_name="fornecedor",
+    )
+    custo_unitario = models.DecimalField(
+        max_digits=12,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="custo unitário",
+    )
+    documento_referencia = models.CharField(
+        max_length=100, blank=True, verbose_name="documento de referência"
+    )
+    data_hora = models.DateTimeField(
+        default=timezone.now, editable=False, db_index=True, verbose_name="data e hora"
+    )
+
+    class Meta:
+        ordering = ["-data_hora", "-created_at"]
+        verbose_name = "movimentação de estoque"
+        verbose_name_plural = "movimentações de estoque"
+        indexes = [
+            models.Index(
+                fields=["produto", "-data_hora"], name="idx_mov_produto_data"
+            ),
+            models.Index(fields=["lote", "-data_hora"], name="idx_mov_lote_data"),
+            models.Index(fields=["tipo", "-data_hora"], name="idx_mov_tipo_data"),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.get_tipo_display()} — {self.produto.nome} "
+            f"({self.quantidade})"
+        )
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError(
+                "Movimentações de estoque são imutáveis. "
+                "Registre um novo ajuste em vez de alterar o histórico."
+            )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(
+            "Movimentações de estoque não podem ser excluídas. "
+            "Registre um estorno por ajuste."
+        )
+
+    def soft_delete(self, user=None):
+        raise ValidationError(
+            "Movimentações de estoque não podem ser excluídas. "
+            "Registre um estorno por ajuste."
+        )
+
+    def hard_delete(self, *args, **kwargs):
+        raise ValidationError(
+            "Movimentações de estoque não podem ser excluídas fisicamente."
+        )
+
+    def clean(self):
+        super().clean()
+        if self.direcao not in self.Direcao.values:
+            raise ValidationError({"direcao": "Direção inválida."})
+        if self.quantidade is None or self.quantidade <= 0:
+            raise ValidationError({"quantidade": "A quantidade deve ser maior que zero."})
+
+
+class Inventario(BaseModel):
+    """Inventário de contagem física de um tipo de estoque."""
+
+    class Status(models.TextChoices):
+        ABERTO = "aberto", "Aberto"
+        FINALIZADO = "finalizado", "Finalizado"
+        CANCELADO = "cancelado", "Cancelado"
+
+    tipo_estoque = models.CharField(
+        max_length=20,
+        choices=Produto.TipoEstoque.choices,
+        default=Produto.TipoEstoque.CLINICO,
+        db_index=True,
+        verbose_name="tipo de estoque",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.ABERTO,
+        db_index=True,
+        verbose_name="situação",
+    )
+    observacoes = models.TextField(blank=True, verbose_name="observações")
+    iniciado_em = models.DateTimeField(
+        default=timezone.now, editable=False, verbose_name="iniciado em"
+    )
+    finalizado_em = models.DateTimeField(
+        null=True, blank=True, editable=False, verbose_name="finalizado em"
+    )
+    finalizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        editable=False,
+        related_name="+",
+        verbose_name="finalizado por",
+    )
+
+    class Meta:
+        ordering = ["-iniciado_em"]
+        verbose_name = "inventário"
+        verbose_name_plural = "inventários"
+
+    def __str__(self) -> str:
+        return f"Inventário {self.get_tipo_estoque_display()} — {self.get_status_display()}"
+
+
+class ItemInventario(BaseModel):
+    """Contagem de um lote dentro de um inventário."""
+
+    inventario = models.ForeignKey(
+        Inventario,
+        on_delete=models.CASCADE,
+        related_name="itens",
+        verbose_name="inventário",
+    )
+    lote = models.ForeignKey(
+        Lote,
+        on_delete=models.PROTECT,
+        related_name="itens_inventario",
+        verbose_name="lote",
+    )
+    quantidade_sistema = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        default=0,
+        verbose_name="quantidade no sistema",
+    )
+    quantidade_contada = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        default=0,
+        verbose_name="quantidade contada",
+    )
+    diferenca = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        default=0,
+        editable=False,
+        verbose_name="diferença",
+    )
+    movimentacao = models.OneToOneField(
+        MovimentacaoEstoque,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        editable=False,
+        related_name="item_inventario",
+        verbose_name="movimentação de ajuste",
+    )
+    observacoes = models.TextField(blank=True, verbose_name="observações")
+
+    class Meta:
+        ordering = ["lote__produto__nome", "lote__data_validade"]
+        verbose_name = "item de inventário"
+        verbose_name_plural = "itens de inventário"
+        constraints = [
+            models.UniqueConstraint(
+                "inventario",
+                "lote",
+                condition=Q(is_deleted=False),
+                name="uniq_item_inventario_lote_ativo",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.lote} — contado {self.quantidade_contada}"
+
+    @property
+    def produto(self):
+        return self.lote.produto
+
+    def save(self, *args, **kwargs):
+        self.diferenca = (self.quantidade_contada or 0) - (
+            self.quantidade_sistema or 0
+        )
+        return super().save(*args, **kwargs)
