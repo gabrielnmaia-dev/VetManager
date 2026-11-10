@@ -1,5 +1,6 @@
 """Serializers dos modelos de veterinários e agenda."""
 
+from django.db import transaction
 from rest_framework import serializers
 
 from apps.base.serializers import AuthoredModelSerializer, usuario_autenticado
@@ -20,9 +21,9 @@ from .models import (
 class VeterinarioSerializer(serializers.ModelSerializer):
     """Veterinário com identificação do profissional vinculado.
 
-    ``id`` e ``profissional_nome`` são necessários para selecionar o
-    responsável em telas que referenciam o veterinário (ex.: documentos
-    veterinários). São somente leitura.
+    ``profissional`` é gravável para permitir o cadastro direto do registro
+    de veterinário (CRMV) pela API. A consistência com o cargo do profissional
+    é validada no backend.
     """
 
     profissional_nome = serializers.CharField(
@@ -38,7 +39,22 @@ class VeterinarioSerializer(serializers.ModelSerializer):
             "crmv",
             "especialidade",
         ]
-        read_only_fields = ["id", "profissional", "profissional_nome"]
+        read_only_fields = ["id", "profissional_nome"]
+
+    def validate_profissional(self, profissional):
+        if profissional.cargo != Profissional.Cargo.VETERINARIO:
+            raise serializers.ValidationError(
+                "Somente profissionais com cargo 'Veterinário' podem ter "
+                "registro de veterinário."
+            )
+        existentes = Veterinario.objects.filter(profissional=profissional)
+        if self.instance is not None:
+            existentes = existentes.exclude(pk=self.instance.pk)
+        if existentes.exists():
+            raise serializers.ValidationError(
+                "Este profissional já possui registro de veterinário."
+            )
+        return profissional
 
 
 class ProfissionalSerializer(AuthoredModelSerializer):
@@ -68,12 +84,29 @@ class ProfissionalResumoSerializer(serializers.ModelSerializer):
         fields = ["id", "nome", "cargo"]
 
 
-class ProfissionalCreateSerializer(serializers.ModelSerializer):
-    """Cadastro de profissional com opção de criar vínculo de veterinário."""
+class ProfissionalWriteSerializer(AuthoredModelSerializer):
+    """Cadastro/edição de profissional, incluindo o vínculo de veterinário.
+
+    Regras aplicadas no backend:
+
+    * cargo ``Veterinário`` exige CRMV (cria ou atualiza o registro de
+      ``Veterinario``). Isso garante que todo veterinário possa assinar
+      prontuários e documentos — antes era possível cadastrar um
+      "Veterinário" sem CRMV, que ficava de fora dos seletores clínicos.
+    * cargo diferente de ``Veterinário`` não aceita CRMV.
+    * a troca de cargo de um veterinário com registro vinculado é bloqueada,
+      pois quebraria a consistência exigida pelo modelo ``Veterinario``.
+
+    A validação acontece **antes** de qualquer escrita e as duas gravações
+    (profissional + veterinário) rodam na mesma transação.
+    """
 
     criar_veterinario = serializers.BooleanField(
-        default=False, write_only=True,
-        help_text="Se true e cargo for 'Veterinário', cria o registro de Veterinário.",
+        default=False, write_only=True, required=False,
+        help_text=(
+            "Compatibilidade: o vínculo é criado sempre que o cargo for "
+            "'Veterinário' e o CRMV for informado."
+        ),
     )
     crmv = serializers.CharField(
         max_length=20, required=False, allow_blank=True, write_only=True
@@ -81,6 +114,7 @@ class ProfissionalCreateSerializer(serializers.ModelSerializer):
     especialidade = serializers.CharField(
         max_length=100, required=False, allow_blank=True, write_only=True
     )
+    veterinario = VeterinarioSerializer(read_only=True)
 
     class Meta:
         model = Profissional
@@ -90,28 +124,108 @@ class ProfissionalCreateSerializer(serializers.ModelSerializer):
             "cargo",
             "telefone",
             "ativo",
+            "veterinario",
             "criar_veterinario",
             "crmv",
             "especialidade",
             "criado_em",
             "atualizado_em",
         ]
-        read_only_fields = ["id", "criado_em", "atualizado_em"]
+        read_only_fields = ["id", "veterinario", "criado_em", "atualizado_em"]
 
-    def create(self, validated_data):
-        criar_vet = validated_data.pop("criar_veterinario", False)
-        crmv = validated_data.pop("crmv", None)
-        especialidade = validated_data.pop("especialidade", "")
-        profissional = Profissional.objects.create(**validated_data)
-        if criar_vet and profissional.cargo == "Veterinário":
-            if not crmv:
+    def validate(self, attrs):
+        instance = self.instance
+        cargo = attrs.get("cargo", getattr(instance, "cargo", None))
+        crmv = attrs.get("crmv")
+        if isinstance(crmv, str):
+            crmv = crmv.strip()
+        existente = getattr(instance, "veterinario", None) if instance else None
+        eh_veterinario = cargo == Profissional.Cargo.VETERINARIO
+
+        if not eh_veterinario:
+            if crmv:
                 raise serializers.ValidationError(
-                    {"crmv": ["CRMV é obrigatório para criar veterinário."]}
+                    {"crmv": ["Somente profissionais com cargo 'Veterinário' podem ter CRMV."]}
                 )
+            if (
+                existente is not None
+                and getattr(instance, "cargo", None) == Profissional.Cargo.VETERINARIO
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "cargo": [
+                            "Remova o registro de veterinário antes de alterar "
+                            "o cargo deste profissional."
+                        ]
+                    }
+                )
+            return attrs
+
+        if existente is None and not crmv:
+            raise serializers.ValidationError(
+                {"crmv": ["CRMV é obrigatório para profissionais com cargo 'Veterinário'."]}
+            )
+        if existente is not None and crmv == "":
+            raise serializers.ValidationError(
+                {"crmv": ["O CRMV não pode ficar vazio."]}
+            )
+        if crmv:
+            duplicados = Veterinario.objects.filter(crmv=crmv)
+            if existente is not None:
+                duplicados = duplicados.exclude(pk=existente.pk)
+            if duplicados.exists():
+                raise serializers.ValidationError(
+                    {"crmv": ["Já existe um veterinário cadastrado com este CRMV."]}
+                )
+        return attrs
+
+    def _aplicar_autoria(self, validated_data):
+        user = usuario_autenticado(self.context)
+        if user is not None:
+            validated_data["updated_by"] = user
+            if self.instance is None:
+                validated_data["created_by"] = user
+
+    @transaction.atomic
+    def create(self, validated_data):
+        validated_data.pop("criar_veterinario", False)
+        crmv = (validated_data.pop("crmv", "") or "").strip()
+        especialidade = validated_data.pop("especialidade", "")
+        self._aplicar_autoria(validated_data)
+        profissional = Profissional.objects.create(**validated_data)
+        if profissional.cargo == Profissional.Cargo.VETERINARIO and crmv:
             Veterinario.objects.create(
                 profissional=profissional, crmv=crmv, especialidade=especialidade
             )
         return profissional
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        validated_data.pop("criar_veterinario", False)
+        crmv = validated_data.pop("crmv", None)
+        especialidade = validated_data.pop("especialidade", None)
+        if isinstance(crmv, str):
+            crmv = crmv.strip()
+        self._aplicar_autoria(validated_data)
+        for campo, valor in validated_data.items():
+            setattr(instance, campo, valor)
+        instance.save()
+
+        existente = getattr(instance, "veterinario", None)
+        if instance.cargo == Profissional.Cargo.VETERINARIO:
+            if existente is not None:
+                if crmv:
+                    existente.crmv = crmv
+                if especialidade is not None:
+                    existente.especialidade = especialidade
+                existente.save()
+            elif crmv:
+                Veterinario.objects.create(
+                    profissional=instance,
+                    crmv=crmv,
+                    especialidade=especialidade or "",
+                )
+        return instance
 
 
 class TipoServicoSerializer(AuthoredModelSerializer):

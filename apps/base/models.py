@@ -68,28 +68,6 @@ class AuditFieldsModel(models.Model):
     class Meta:
         abstract = True
 
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        editable=False,
-        related_name="+",
-        verbose_name="criado por",
-    )
-    updated_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        editable=False,
-        related_name="+",
-        verbose_name="atualizado por",
-    )
-
-    class Meta:
-        abstract = True
-
 
 class SoftDeleteModel(models.Model):
     """Exclusão lógica com recuperação controlada."""

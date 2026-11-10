@@ -36,11 +36,11 @@ class Prontuario(BaseModel):
     
     class Meta:
         ordering = ["-data_consulta"]
-        
-        def __str__(self):
-            return f"Prontuário de {self.pet.nome} - {self.data_consulta:%d/%m/%Y}"
-        
-        
+
+    def __str__(self):
+        return f"Prontuário de {self.pet.nome} - {self.data_consulta:%d/%m/%Y}"
+
+
 class Vacina(SoftDeleteModel):
     """Registro de vacina.
 

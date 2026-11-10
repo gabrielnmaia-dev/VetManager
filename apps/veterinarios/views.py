@@ -21,9 +21,9 @@ from .serializers import (
     BloqueioAgendaSerializer,
     HistoricoStatusAtendimentoSerializer,
     HorarioTrabalhoSerializer,
-    ProfissionalCreateSerializer,
     ProfissionalSerializer,
     ProfissionalResumoSerializer,
+    ProfissionalWriteSerializer,
     SalaConsultorioSerializer,
     TipoServicoSerializer,
     VeterinarioSerializer,
@@ -50,8 +50,10 @@ class ProfissionalViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
     }
 
     def get_serializer_class(self):
-        if self.action == "create":
-            return ProfissionalCreateSerializer
+        # create/update compartilham o serializer de escrita para que o CRMV
+        # também possa ser informado/corrigido ao editar um profissional.
+        if self.action in {"create", "update", "partial_update"}:
+            return ProfissionalWriteSerializer
         return super().get_serializer_class()
 
 
@@ -66,7 +68,13 @@ class VeterinarioViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter]
     search_fields = ["profissional__nome", "crmv", "especialidade"]
     audit_entidade = "veterinario"
-    role_policy = ("admin", "veterinario")
+    # Leitura para todos os papéis que preenchem formulários clínicos;
+    # cadastro/edição/exclusão restritos ao admin (como os profissionais).
+    role_policy = {
+        "list": ("admin", "veterinario", "recepcao"),
+        "retrieve": ("admin", "veterinario", "recepcao"),
+        "*": ("admin",),
+    }
 
 
 class TipoServicoViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
