@@ -23,9 +23,16 @@ from apps.accounts.views import (
     VetTokenObtainPairView as TokenObtainPairView,
     VetTokenRefreshView as TokenRefreshView,
 )
+from apps.health.views import liveness, readiness
+from apps.health.metrics import metrics
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+
+    # Healthchecks operacionais (sem autenticação).
+    path('health/', liveness, name='health-liveness'),
+    path('health/ready/', readiness, name='health-readiness'),
+    path('health/metrics/', metrics, name='health-metrics'),
 
     # Swagger
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
