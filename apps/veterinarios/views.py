@@ -3,6 +3,7 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, filters
 
+from apps.auditoria.services import usuario_da_request
 from apps.base.views import AuditModelViewSetMixin
 
 from .models import (
@@ -56,6 +57,15 @@ class ProfissionalViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
             return ProfissionalWriteSerializer
         return super().get_serializer_class()
 
+    def perform_destroy(self, instance):
+        # A exclusão é lógica. O vínculo de veterinário precisa acompanhar,
+        # senão continuaria ativo e aparecendo nos seletores clínicos mesmo
+        # com o profissional excluído.
+        veterinario = getattr(instance, "veterinario", None)
+        super().perform_destroy(instance)
+        if veterinario is not None and not veterinario.is_deleted:
+            veterinario.delete(user=usuario_da_request(self.request))
+
 
 class VeterinarioViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
     """Cadastro de veterinários (CRMV, especialidade)."""
@@ -75,6 +85,10 @@ class VeterinarioViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
         "retrieve": ("admin", "veterinario", "recepcao"),
         "*": ("admin",),
     }
+
+    def get_queryset(self):
+        # Nunca oferecer veterinário cujo profissional foi excluído.
+        return super().get_queryset().filter(profissional__is_deleted=False)
 
 
 class TipoServicoViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):

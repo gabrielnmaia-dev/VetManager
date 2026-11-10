@@ -138,6 +138,30 @@ class ProfissionalVeterinarioWriteTests(TestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
+    # ----- exclusão -----
+    def test_excluir_profissional_desativa_vinculo_veterinario(self):
+        """Exclusão lógica do profissional não pode deixar veterinário ativo."""
+        resp = self._criar(nome="Vet Excluir", crmv="CRMV-120")
+        self.assertEqual(resp.status_code, 201)
+        prof_id = resp.json()["id"]
+        vet_id = resp.json()["veterinario"]["id"]
+
+        del_resp = self.client.delete(f"/api/v1/profissionais/{prof_id}/")
+        self.assertEqual(del_resp.status_code, 204)
+        self.assertFalse(Veterinario.objects.filter(id=vet_id).exists())
+
+        listados = self.client.get("/api/v1/veterinarios/").json()
+        ids = [v["id"] for v in listados.get("results", listados)]
+        self.assertNotIn(vet_id, ids)
+
+    def test_veterinario_de_profissional_excluido_nao_aparece(self):
+        prof = Profissional.objects.create(nome="Vet Sumiu", cargo="Veterinário")
+        vet = Veterinario.objects.create(profissional=prof, crmv="CRMV-121")
+        prof.delete(user=self.admin)
+        listados = self.client.get("/api/v1/veterinarios/").json()
+        ids = [v["id"] for v in listados.get("results", listados)]
+        self.assertNotIn(str(vet.id), ids)
+
     # ----- RBAC -----
     def test_recepcao_pode_listar_veterinarios_mas_nao_criar(self):
         self.client.force_authenticate(self.rec)
