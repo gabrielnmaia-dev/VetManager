@@ -83,6 +83,7 @@ INSTALLED_APPS = [
     'apps.servicos.apps.ServicosConfig',
     'apps.financeiro.apps.FinanceiroConfig',
     'apps.portal.apps.PortalConfig',
+    'apps.health.apps.HealthConfig',
     'apps.base'
 ]
 
@@ -178,6 +179,10 @@ SPECTACULAR_SETTINGS = {
 
 
 MIDDLEWARE = [
+    # Contexto de logging + log de acesso devem envolver o restante da pilha
+    # para capturar o request id e a duração total da requisição.
+    'core.middleware.RequestContextMiddleware',
+    'core.middleware.AccessLogMiddleware',
     "corsheaders.middleware.CorsMiddleware",
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -375,9 +380,52 @@ PORTAL_URL = os.environ.get("PORTAL_URL", "http://localhost:5173/portal")
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
-    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'formatters': {
+        # JSON de uma linha: timestamp, nível, serviço, request id, usuário,
+        # operação, status, duração e erro. Sem payloads/dados clínicos.
+        'json': {'()': 'core.logging.JsonFormatter'},
+        # Formato legível para desenvolvimento local.
+        'texto': {
+            'format': '%(asctime)s %(levelname)s %(name)s %(message)s',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': (
+                'texto'
+                if os.environ.get('LOG_FORMAT', 'json').lower() == 'texto'
+                else 'json'
+            ),
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': os.environ.get('LOG_LEVEL', 'INFO').upper(),
+    },
     'loggers': {
-        'django.security': {'handlers': ['console'], 'level': 'WARNING'},
-        'vetmanager.security': {'handlers': ['console'], 'level': 'INFO'},
+        'django.security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'vetmanager': {
+            'handlers': ['console'],
+            'level': os.environ.get('LOG_LEVEL', 'INFO').upper(),
+            'propagate': False,
+        },
+        'vetmanager.access': {
+            'handlers': ['console'],
+            'level': os.environ.get('LOG_LEVEL', 'INFO').upper(),
+            'propagate': False,
+        },
     },
 }
+
+# Requisições acima deste tempo são registradas como WARNING (lentidão).
+ACCESS_LOG_SLOW_MS = env_int('ACCESS_LOG_SLOW_MS', 1000)

@@ -195,6 +195,8 @@ if not env_bool("API_DOCS_PUBLIC"):
     }
 
 MIDDLEWARE = [
+    "core.middleware.RequestContextMiddleware",
+    "core.middleware.AccessLogMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
