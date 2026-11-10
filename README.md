@@ -692,6 +692,37 @@ A suíte cobre, entre outros pontos:
 - endpoints legados de atendimento
 - busca e filtros dos recursos
 
+### Frontend (repositório `vetmaneger-front`)
+
+O frontend tem suíte própria com **Vitest + Testing Library**:
+
+```bash
+cd vetmaneger-front
+npm ci --legacy-peer-deps   # instalação reprodutível (há peer deps conflitantes)
+npm test                    # executa a suíte uma vez
+npm run test:watch          # modo watch durante o desenvolvimento
+npm run lint
+npm run build
+```
+
+### Integração contínua (GitHub Actions)
+
+Cada repositório tem seu próprio workflow em `.github/workflows/ci.yml`:
+
+- **Backend** (`VetManager`): `manage.py check`,
+  `makemigrations --check --dry-run` e `manage.py test` com
+  `core.settings.test` (SQLite + cache local, sem depender de PostgreSQL/Redis).
+- **Frontend** (`vetmaneger-front`): `npm ci --legacy-peer-deps`,
+  `npm run lint`, `npm test` e `npm run build`.
+
+Os workflows rodam em `push` e `pull_request` para as branches `main` e
+`staging`.
+
+> As verificações obrigatórias de merge (branch protection) devem ser
+> habilitadas no GitHub em **Settings → Branches**, marcando os jobs de CI como
+> *required status checks*. Esse ajuste é remoto e **não é feito
+> automaticamente** pelo repositório.
+
 ---
 
 ## 🚢 Deploy
