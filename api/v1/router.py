@@ -66,6 +66,12 @@ from apps.internacao.views import (
     LeitoViewSet,
     OcupacaoLeitoViewSet,
 )
+from apps.servicos.views import (
+    CategoriaServicoViewSet,
+    OrcamentoViewSet,
+    ServicoRealizadoViewSet,
+    ServicoViewSet,
+)
 
 router = DefaultRouter()
 router.register("tutores", TutorViewSet, basename="tutor")
@@ -167,6 +173,18 @@ router.register(
     "administracoes-internacao",
     AdministracaoMedicamentoInternacaoViewSet,
     basename="administracao-internacao",
+)
+router.register(
+    "categorias-servico",
+    CategoriaServicoViewSet,
+    basename="categoria-servico",
+)
+router.register("servicos", ServicoViewSet, basename="servico")
+router.register("orcamentos", OrcamentoViewSet, basename="orcamento")
+router.register(
+    "servicos-realizados",
+    ServicoRealizadoViewSet,
+    basename="servico-realizado",
 )
 
 urlpatterns = router.urls + [
