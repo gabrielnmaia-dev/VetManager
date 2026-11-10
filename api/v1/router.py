@@ -72,6 +72,21 @@ from apps.servicos.views import (
     ServicoRealizadoViewSet,
     ServicoViewSet,
 )
+from apps.financeiro.views import (
+    CaixaViewSet,
+    ContasPendentesView,
+    ContaReceberViewSet,
+    FinanceiroDashboardView,
+    FluxoCaixaView,
+    FormaPagamentoViewSet,
+    InadimplenciaView,
+    MovimentacaoCaixaViewSet,
+    PagamentoViewSet,
+    ParcelaContaReceberViewSet,
+    RecebimentosView,
+    ReceitaPeriodoView,
+    ReceitaServicoView,
+)
 
 router = DefaultRouter()
 router.register("tutores", TutorViewSet, basename="tutor")
@@ -186,8 +201,59 @@ router.register(
     ServicoRealizadoViewSet,
     basename="servico-realizado",
 )
+router.register(
+    "formas-pagamento", FormaPagamentoViewSet, basename="forma-pagamento"
+)
+router.register("contas-receber", ContaReceberViewSet, basename="conta-receber")
+router.register(
+    "parcelas-conta-receber",
+    ParcelaContaReceberViewSet,
+    basename="parcela-conta-receber",
+)
+router.register("pagamentos", PagamentoViewSet, basename="pagamento")
+router.register("caixas", CaixaViewSet, basename="caixa")
+router.register(
+    "movimentacoes-caixa",
+    MovimentacaoCaixaViewSet,
+    basename="movimentacao-caixa",
+)
 
 urlpatterns = router.urls + [
+    path(
+        "financeiro/dashboard/",
+        FinanceiroDashboardView.as_view(),
+        name="financeiro-dashboard",
+    ),
+    path(
+        "financeiro/receita-periodo/",
+        ReceitaPeriodoView.as_view(),
+        name="financeiro-receita-periodo",
+    ),
+    path(
+        "financeiro/receita-servico/",
+        ReceitaServicoView.as_view(),
+        name="financeiro-receita-servico",
+    ),
+    path(
+        "financeiro/recebimentos/",
+        RecebimentosView.as_view(),
+        name="financeiro-recebimentos",
+    ),
+    path(
+        "financeiro/contas-pendentes/",
+        ContasPendentesView.as_view(),
+        name="financeiro-contas-pendentes",
+    ),
+    path(
+        "financeiro/inadimplencia/",
+        InadimplenciaView.as_view(),
+        name="financeiro-inadimplencia",
+    ),
+    path(
+        "financeiro/fluxo-caixa/",
+        FluxoCaixaView.as_view(),
+        name="financeiro-fluxo-caixa",
+    ),
     path(
         "internacao/central/",
         InternacaoCentralView.as_view(),

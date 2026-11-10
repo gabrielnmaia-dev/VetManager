@@ -81,6 +81,7 @@ INSTALLED_APPS = [
     'apps.procedimentos.apps.ProcedimentosConfig',
     'apps.internacao.apps.InternacaoConfig',
     'apps.servicos.apps.ServicosConfig',
+    'apps.financeiro.apps.FinanceiroConfig',
     'apps.base'
 ]
 
