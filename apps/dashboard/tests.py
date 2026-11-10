@@ -4,7 +4,7 @@ Cobrem autenticação, agregações server-side, janela de 7 dias, variação,
 ranking de serviços, alertas clínicos e agenda do dia.
 """
 
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -14,9 +14,14 @@ from rest_framework.test import APIClient
 
 from apps.atendimentos.models import Atendimento
 from apps.pets.models import Especie, Pet
-from apps.prontuario.models import Vacina, Vermifugacao
+from apps.prontuario.models import Prontuario, Vacina, Vermifugacao
 from apps.tutores.models import Tutor
-from apps.veterinarios.models import Profissional, Veterinario
+from apps.veterinarios.models import (
+    BloqueioAgenda,
+    HorarioTrabalho,
+    Profissional,
+    Veterinario,
+)
 
 User = get_user_model()
 
@@ -61,22 +66,37 @@ class DashboardTests(TestCase):
         self.client.force_authenticate(user or self.admin)
         return self.client
 
-    def quando(self, dia, hora=9):
-        naive = datetime.combine(dia, time(hora, 0))
+    def quando(self, dia, hora=9, minuto=0):
+        naive = datetime.combine(dia, time(hora, minuto))
         return timezone.make_aware(naive)
 
     def criar_atendimento(
-        self, dia=None, hora=9, status=None, tipo_servico=None, **extra
+        self,
+        dia=None,
+        hora=9,
+        minuto=0,
+        status=None,
+        tipo_servico=None,
+        **extra,
     ):
         dados = {
             "pet": self.pet,
             "tipo_servico": tipo_servico or Atendimento.TipoServico.CONSULTA,
-            "data_hora_inicio": self.quando(dia or self.hoje, hora),
+            "data_hora_inicio": self.quando(dia or self.hoje, hora, minuto),
         }
         if status:
             dados["status"] = status
         dados.update(extra)
         return Atendimento.objects.create(**dados)
+
+    def criar_prontuario(self, **extra):
+        dados = {
+            "pet": self.pet,
+            "veterinario": self.veterinario,
+            "data_consulta": self.quando(self.hoje),
+        }
+        dados.update(extra)
+        return Prontuario.objects.create(**dados)
 
     def criar_vacina(self, **extra):
         dados = {
@@ -358,3 +378,538 @@ class DashboardTests(TestCase):
         self.assertEqual(agenda[0]["profissional"], "Dra. Painel")
         self.assertEqual(agenda[1]["status"], "confirmado")
         self.assertEqual(agenda[1]["profissional"], "Dra. Painel")
+
+    def test_agenda_do_dia_respeita_filtros_de_profissional_e_tipo(self):
+        outro = Profissional.objects.create(
+            nome="Dr. Banho", cargo="Banhista"
+        )
+        self.criar_atendimento(
+            hora=9,
+            profissional=self.profissional,
+            tipo_servico=Atendimento.TipoServico.CONSULTA,
+        )
+        self.criar_atendimento(
+            hora=10,
+            profissional=outro,
+            tipo_servico=Atendimento.TipoServico.BANHO,
+        )
+        self.criar_atendimento(
+            hora=11,
+            profissional=self.profissional,
+            tipo_servico=Atendimento.TipoServico.BANHO,
+        )
+
+        self.autenticar()
+        resposta = self.client.get(
+            "/api/v1/dashboard/",
+            {"profissional": str(outro.pk)},
+        )
+        self.assertEqual(len(resposta.data["agenda_hoje"]), 1)
+        self.assertEqual(
+            resposta.data["agenda_hoje"][0]["profissional"], "Dr. Banho"
+        )
+
+        resposta = self.client.get(
+            "/api/v1/dashboard/",
+            {
+                "profissional": str(self.profissional.pk),
+                "tipo_servico": "banho",
+            },
+        )
+        self.assertEqual(len(resposta.data["agenda_hoje"]), 1)
+        self.assertEqual(resposta.data["agenda_hoje"][0]["hora"], "11:00")
+
+    # ------------------------------------------------------------------
+    # Indicadores corrigidos e fuso horário
+    # ------------------------------------------------------------------
+    def test_pendentes_inclui_agendado_e_confirmado_a_partir_de_hoje(self):
+        self.criar_atendimento(status=Atendimento.Status.AGENDADO)
+        self.criar_atendimento(
+            hora=10, status=Atendimento.Status.CONFIRMADO
+        )
+        self.criar_atendimento(
+            dia=self.hoje + timedelta(days=1),
+            status=Atendimento.Status.AGENDADO,
+        )
+        # Pendente no passado não entra no backlog operacional.
+        self.criar_atendimento(
+            dia=self.hoje - timedelta(days=1),
+            status=Atendimento.Status.AGENDADO,
+        )
+        self.criar_atendimento(
+            hora=11, status=Atendimento.Status.REALIZADO
+        )
+        self.criar_atendimento(
+            hora=12, status=Atendimento.Status.CANCELADO
+        )
+
+        self.autenticar()
+        resposta = self.client.get("/api/v1/dashboard/operacional/")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.data["atendimentos_pendentes"], 3)
+        self.assertEqual(resposta.data["atendimentos_pendentes_hoje"], 2)
+        self.assertEqual(resposta.data["atendimentos_hoje"], 4)
+
+    def test_cancelamentos_e_faltas_respeitam_periodo_e_status(self):
+        self.criar_atendimento(status=Atendimento.Status.CANCELADO)
+        self.criar_atendimento(
+            dia=self.hoje - timedelta(days=1),
+            status=Atendimento.Status.CANCELADO,
+        )
+        self.criar_atendimento(
+            dia=self.hoje - timedelta(days=40),
+            status=Atendimento.Status.CANCELADO,
+        )
+        self.criar_atendimento(
+            hora=11, status=Atendimento.Status.FALTOU
+        )
+        self.criar_atendimento(
+            dia=self.hoje - timedelta(days=10),
+            status=Atendimento.Status.FALTOU,
+        )
+
+        self.autenticar()
+        # Janela padrão de 30 dias: a exclusão de 40 dias atrás fica de fora.
+        resposta = self.client.get("/api/v1/dashboard/operacional/")
+        self.assertEqual(resposta.data["cancelamentos"], 2)
+        self.assertEqual(resposta.data["faltas"], 2)
+
+        # Janela explícita de 60 dias inclui o cancelamento antigo.
+        inicio = (self.hoje - timedelta(days=59)).isoformat()
+        resposta = self.client.get(
+            "/api/v1/dashboard/operacional/",
+            {"data_inicio": inicio, "data_fim": self.hoje.isoformat()},
+        )
+        self.assertEqual(resposta.data["cancelamentos"], 3)
+        self.assertEqual(resposta.data["faltas"], 2)
+
+        # Filtro de status restringe os totais ao status pedido.
+        resposta = self.client.get(
+            "/api/v1/dashboard/operacional/",
+            {"data_inicio": inicio, "data_fim": self.hoje.isoformat(), "status": "cancelado"},
+        )
+        self.assertEqual(resposta.data["atendimentos_periodo"], 3)
+        self.assertEqual(resposta.data["cancelamentos"], 3)
+        self.assertEqual(resposta.data["faltas"], 0)
+        self.assertEqual(resposta.data["realizados"], 0)
+        self.assertEqual(resposta.data["atendimentos_pendentes"], 0)
+
+    def test_atendimentos_hoje_considera_limites_do_dia_local(self):
+        # 00:15 e 23:30 de hoje entram; 23:30 de ontem não.
+        self.criar_atendimento(hora=0, minuto=15)
+        self.criar_atendimento(hora=23, minuto=30)
+        self.criar_atendimento(
+            dia=self.hoje - timedelta(days=1), hora=23, minuto=30
+        )
+
+        self.autenticar()
+        resposta = self.client.get("/api/v1/dashboard/")
+        self.assertEqual(resposta.data["atendimentos_hoje"], 2)
+        serie = resposta.data["serie_semanal"]
+        self.assertEqual(serie[-1]["iso"], self.hoje.isoformat())
+        self.assertEqual(serie[-1]["total"], 2)
+        self.assertEqual(serie[-2]["total"], 1)
+
+    def test_novos_pacientes_no_periodo(self):
+        # self.pet e self.outro_pet são criados agora; envelhecemos um deles.
+        Pet.objects.filter(pk=self.outro_pet.pk).update(
+            criado_em=timezone.now() - timedelta(days=40)
+        )
+
+        self.autenticar()
+        resposta = self.client.get("/api/v1/dashboard/operacional/")
+        self.assertEqual(resposta.data["total_animais"], 2)
+        self.assertEqual(resposta.data["novos_pacientes"], 1)
+
+        inicio = (self.hoje - timedelta(days=59)).isoformat()
+        resposta = self.client.get(
+            "/api/v1/dashboard/operacional/",
+            {"data_inicio": inicio, "data_fim": self.hoje.isoformat()},
+        )
+        self.assertEqual(resposta.data["novos_pacientes"], 2)
+
+    # ------------------------------------------------------------------
+    # Filtros
+    # ------------------------------------------------------------------
+    def test_filtros_por_profissional_tipo_e_status(self):
+        outro_profissional = Profissional.objects.create(
+            nome="Dr. Banho", cargo="Banhista"
+        )
+        cancelado = self.criar_atendimento(
+            status=Atendimento.Status.CANCELADO,
+            profissional=self.profissional,
+        )
+        self.criar_atendimento(
+            status=Atendimento.Status.AGENDADO,
+            profissional=self.profissional,
+            tipo_servico=Atendimento.TipoServico.CONSULTA,
+        )
+        self.criar_atendimento(
+            hora=10,
+            status=Atendimento.Status.REALIZADO,
+            profissional=outro_profissional,
+            tipo_servico=Atendimento.TipoServico.BANHO,
+        )
+
+        self.autenticar()
+        parametros = {
+            "data_inicio": self.hoje.isoformat(),
+            "data_fim": self.hoje.isoformat(),
+            "profissional": str(self.profissional.pk),
+            "tipo_servico": "consulta",
+        }
+        resposta = self.client.get(
+            "/api/v1/dashboard/operacional/", parametros
+        )
+        self.assertEqual(resposta.data["atendimentos_periodo"], 2)
+        self.assertEqual(resposta.data["realizados"], 0)
+        self.assertEqual(resposta.data["atendimentos_por_profissional"][0]["nome"], "Dra. Painel")
+
+        parametros["status"] = "cancelado"
+        resposta = self.client.get(
+            "/api/v1/dashboard/operacional/", parametros
+        )
+        self.assertEqual(resposta.data["atendimentos_periodo"], 1)
+        self.assertEqual(resposta.data["cancelamentos"], 1)
+
+        parametros["status"] = "realizado"
+        resposta = self.client.get(
+            "/api/v1/dashboard/operacional/", parametros
+        )
+        self.assertEqual(resposta.data["atendimentos_periodo"], 0)
+        self.assertEqual(cancelado.status, Atendimento.Status.CANCELADO)
+
+    # ------------------------------------------------------------------
+    # Indicadores clínicos e por profissional
+    # ------------------------------------------------------------------
+    def test_retornos_pendentes_e_vacinas_proximas(self):
+        self.criar_prontuario(
+            retorno_recomendado=self.quando(
+                self.hoje - timedelta(days=1)
+            )
+        )
+        self.criar_prontuario(
+            retorno_recomendado=self.quando(
+                self.hoje + timedelta(days=5)
+            )
+        )
+        self.criar_prontuario(
+            retorno_recomendado=self.quando(
+                self.hoje + timedelta(days=60)
+            )
+        )
+        self.criar_vacina(
+            data_retorno=self.hoje - timedelta(days=2),
+            veterinario=self.veterinario,
+        )
+        self.criar_vacina(
+            data_retorno=self.hoje + timedelta(days=10),
+            veterinario=self.veterinario,
+        )
+        self.criar_vacina(
+            data_retorno=self.hoje + timedelta(days=45),
+            veterinario=self.veterinario,
+        )
+        self.criar_vermifugacao(
+            data_retorno=self.hoje - timedelta(days=3),
+            veterinario=self.veterinario,
+        )
+        self.criar_vermifugacao(
+            data_retorno=self.hoje + timedelta(days=15),
+            veterinario=self.veterinario,
+        )
+
+        self.autenticar()
+        resposta = self.client.get("/api/v1/dashboard/operacional/")
+        detalhe = resposta.data["retornos_pendentes_detalhe"]
+        self.assertEqual(detalhe["prontuarios"]["atrasados"], 1)
+        self.assertEqual(detalhe["prontuarios"]["proximos"], 1)
+        self.assertEqual(detalhe["vacinas"]["atrasadas"], 1)
+        self.assertEqual(detalhe["vacinas"]["proximas"], 1)
+        self.assertEqual(detalhe["vermifugacoes"]["atrasadas"], 1)
+        self.assertEqual(detalhe["vermifugacoes"]["proximas"], 1)
+        self.assertEqual(resposta.data["retornos_pendentes"], 6)
+        self.assertEqual(resposta.data["vacinas_proximas_vencimento"], 1)
+
+        # O filtro de profissional considera o veterinário responsável.
+        resposta = self.client.get(
+            "/api/v1/dashboard/operacional/",
+            {"profissional": str(self.profissional.pk)},
+        )
+        self.assertEqual(resposta.data["retornos_pendentes"], 6)
+
+    def test_atendimentos_por_profissional_e_legado(self):
+        outro = Profissional.objects.create(
+            nome="Dr. Banho", cargo="Banhista"
+        )
+        self.criar_atendimento(
+            status=Atendimento.Status.REALIZADO,
+            profissional=self.profissional,
+        )
+        self.criar_atendimento(
+            hora=10,
+            status=Atendimento.Status.REALIZADO,
+            profissional=self.profissional,
+        )
+        self.criar_atendimento(
+            hora=11,
+            status=Atendimento.Status.CANCELADO,
+            profissional=self.profissional,
+        )
+        self.criar_atendimento(
+            hora=12,
+            status=Atendimento.Status.AGENDADO,
+            profissional=outro,
+        )
+        self.criar_atendimento(
+            hora=13,
+            status=Atendimento.Status.AGENDADO,
+            nome_profissional="Dr. Legado",
+        )
+
+        self.autenticar()
+        resposta = self.client.get("/api/v1/dashboard/operacional/")
+        por_nome = {
+            item["nome"]: item
+            for item in resposta.data["atendimentos_por_profissional"]
+        }
+        self.assertEqual(por_nome["Dra. Painel"]["total"], 3)
+        self.assertEqual(por_nome["Dra. Painel"]["realizados"], 2)
+        self.assertEqual(por_nome["Dra. Painel"]["cancelados"], 1)
+        self.assertEqual(por_nome["Dra. Painel"]["percentual"], 60.0)
+        self.assertEqual(por_nome["Dr. Banho"]["total"], 1)
+        self.assertIn("Dr. Legado", por_nome)
+        self.assertIsNone(por_nome["Dr. Legado"]["id"])
+
+    def test_ocupacao_da_agenda_com_jornada_e_bloqueio(self):
+        HorarioTrabalho.objects.create(
+            profissional=self.profissional,
+            dia_semana=self.hoje.weekday(),
+            hora_inicio=time(8, 0),
+            hora_fim=time(12, 0),
+        )
+        self.criar_atendimento(
+            hora=8,
+            status=Atendimento.Status.AGENDADO,
+            duracao_minutos=30,
+        )
+        self.criar_atendimento(
+            hora=9,
+            status=Atendimento.Status.CONFIRMADO,
+            duracao_minutos=30,
+        )
+        # Cancelado não ocupa a agenda.
+        self.criar_atendimento(
+            hora=10,
+            status=Atendimento.Status.CANCELADO,
+            duracao_minutos=60,
+        )
+
+        self.autenticar()
+        parametros = {
+            "data_inicio": self.hoje.isoformat(),
+            "data_fim": self.hoje.isoformat(),
+        }
+        resposta = self.client.get(
+            "/api/v1/dashboard/operacional/", parametros
+        )
+        ocupacao = resposta.data["ocupacao_agenda"]
+        self.assertEqual(ocupacao["capacidade_minutos"], 240)
+        self.assertEqual(ocupacao["ocupado_minutos"], 60)
+        self.assertEqual(ocupacao["percentual"], 25.0)
+        self.assertEqual(ocupacao["origem_capacidade"], "horarios")
+
+        BloqueioAgenda.objects.create(
+            tipo=BloqueioAgenda.TipoBloqueio.MANUTENCAO,
+            data_inicio=self.quando(self.hoje, 8),
+            data_fim=self.quando(self.hoje, 9),
+        )
+        resposta = self.client.get(
+            "/api/v1/dashboard/operacional/", parametros
+        )
+        ocupacao = resposta.data["ocupacao_agenda"]
+        self.assertEqual(ocupacao["capacidade_minutos"], 180)
+        self.assertEqual(ocupacao["percentual"], 33.3)
+
+    # ------------------------------------------------------------------
+    # Histórico e comparação
+    # ------------------------------------------------------------------
+    def test_historico_semanal_mensal_e_comparacao(self):
+        self.criar_atendimento(status=Atendimento.Status.REALIZADO)
+        self.criar_atendimento(
+            hora=10, status=Atendimento.Status.AGENDADO
+        )
+        self.criar_atendimento(dia=self.hoje - timedelta(days=8))
+        self.criar_atendimento(dia=self.hoje - timedelta(days=40))
+        # Fora do período atual: base da comparação com o período anterior.
+        self.criar_atendimento(dia=self.hoje - timedelta(days=50))
+        self.criar_atendimento(
+            dia=self.hoje - timedelta(days=51), hora=10
+        )
+
+        self.autenticar()
+        inicio = (self.hoje - timedelta(days=45)).isoformat()
+        resposta = self.client.get(
+            "/api/v1/dashboard/historico/",
+            {"data_inicio": inicio, "data_fim": self.hoje.isoformat()},
+        )
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.data["total_periodo"], 4)
+
+        self.assertEqual(
+            sum(item["total"] for item in resposta.data["por_semana"]), 4
+        )
+        self.assertEqual(
+            sum(item["total"] for item in resposta.data["por_mes"]), 4
+        )
+        self.assertEqual(
+            sum(item["total"] for item in resposta.data["por_dia"]), 4
+        )
+        self.assertEqual(resposta.data["por_dia"][-1]["iso"], self.hoje.isoformat())
+        self.assertEqual(
+            sum(
+                item["total"]
+                for item in resposta.data["distribuicao_status"]
+            ),
+            4,
+        )
+        self.assertEqual(
+            sum(item["total"] for item in resposta.data["servicos"]), 4
+        )
+
+        primeira_semana = resposta.data["por_semana"][0]
+        self.assertEqual(
+            date.fromisoformat(primeira_semana["inicio"]).weekday(), 0
+        )
+        self.assertRegex(
+            resposta.data["por_mes"][0]["mes"], r"^\d{4}-\d{2}$"
+        )
+
+        comparacao = resposta.data["comparacao"]
+        self.assertEqual(comparacao["periodo_atual"]["total"], 4)
+        self.assertEqual(comparacao["periodo_anterior"]["total"], 2)
+        self.assertEqual(comparacao["variacao_absoluta"], 2)
+        self.assertEqual(comparacao["variacao_percentual"], 100)
+
+    def test_dashboard_principal_inclui_blocos_novos(self):
+        self.criar_atendimento(status=Atendimento.Status.REALIZADO)
+
+        self.autenticar()
+        resposta = self.client.get("/api/v1/dashboard/")
+        self.assertIn("operacional", resposta.data)
+        self.assertIn("historico", resposta.data)
+        self.assertIn("comparacao", resposta.data)
+        self.assertEqual(
+            resposta.data["operacional"]["realizados"],
+            resposta.data["historico"]["comparacao"]["periodo_atual"]["realizados"],
+        )
+        self.assertEqual(
+            resposta.data["total_pets"],
+            resposta.data["operacional"]["total_animais"],
+        )
+
+    # ------------------------------------------------------------------
+    # Independência da paginação
+    # ------------------------------------------------------------------
+    def test_indicadores_nao_dependem_da_paginacao_da_lista(self):
+        statuses = (
+            [Atendimento.Status.REALIZADO] * 10
+            + [Atendimento.Status.AGENDADO] * 5
+            + [Atendimento.Status.CONFIRMADO] * 5
+            + [Atendimento.Status.CANCELADO] * 3
+            + [Atendimento.Status.FALTOU] * 2
+        )
+        for indice, status in enumerate(statuses):
+            self.criar_atendimento(
+                hora=indice % 24,
+                minuto=(indice // 24) * 30,
+                status=status,
+            )
+
+        self.autenticar()
+        principal = self.client.get("/api/v1/dashboard/")
+        pagina_2 = self.client.get("/api/v1/dashboard/?page=2")
+        operacional = self.client.get("/api/v1/dashboard/operacional/?page=9")
+
+        self.assertEqual(principal.data["atendimentos_hoje"], 25)
+        self.assertEqual(
+            principal.data["operacional"]["atendimentos_periodo"], 25
+        )
+        self.assertEqual(principal.data["operacional"]["realizados"], 10)
+        self.assertEqual(principal.data["operacional"]["cancelamentos"], 3)
+        self.assertEqual(principal.data["operacional"]["faltas"], 2)
+        self.assertEqual(
+            principal.data["operacional"]["atendimentos_pendentes_periodo"],
+            10,
+        )
+        self.assertEqual(
+            pagina_2.data["operacional"], principal.data["operacional"]
+        )
+        self.assertEqual(
+            operacional.data["atendimentos_periodo"],
+            principal.data["operacional"]["atendimentos_periodo"],
+        )
+
+        # A lista de atendimentos continua paginada (20 por página); o painel
+        # não herda esse limite.
+        lista = self.client.get("/api/v1/atendimentos/")
+        self.assertEqual(lista.data["count"], 25)
+        self.assertEqual(len(lista.data["results"]), 20)
+
+    # ------------------------------------------------------------------
+    # Opções de filtro e validação
+    # ------------------------------------------------------------------
+    def test_endpoint_de_filtros(self):
+        self.autenticar()
+        resposta = self.client.get("/api/v1/dashboard/filtros/")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(
+            resposta.data["periodo_padrao"]["data_fim"],
+            self.hoje.isoformat(),
+        )
+        self.assertIn(
+            str(self.profissional.pk),
+            [item["id"] for item in resposta.data["profissionais"]],
+        )
+        self.assertEqual(len(resposta.data["status"]), 5)
+        self.assertIn(
+            "consulta",
+            [item["value"] for item in resposta.data["tipos_servico"]],
+        )
+
+    def test_validacao_dos_filtros(self):
+        self.autenticar()
+        casos = [
+            ({"data_inicio": "2026-13-01"}, "data_inicio"),
+            (
+                {"data_inicio": "2026-11-10", "data_fim": "2026-11-01"},
+                "data_fim",
+            ),
+            ({"status": "inexistente"}, "status"),
+            ({"tipo_servico": "inexistente"}, "tipo_servico"),
+            ({"profissional": "nao-e-uuid"}, "profissional"),
+            (
+                {
+                    "data_inicio": (self.hoje - timedelta(days=400)).isoformat(),
+                    "data_fim": self.hoje.isoformat(),
+                },
+                "data_fim",
+            ),
+        ]
+        for parametros, campo in casos:
+            with self.subTest(parametros=parametros):
+                resposta = self.client.get(
+                    "/api/v1/dashboard/operacional/", parametros
+                )
+                self.assertEqual(resposta.status_code, 400)
+                self.assertIn(campo, resposta.data)
+
+    def test_novos_endpoints_exigem_autenticacao(self):
+        for rota in (
+            "/api/v1/dashboard/operacional/",
+            "/api/v1/dashboard/historico/",
+            "/api/v1/dashboard/filtros/",
+        ):
+            with self.subTest(rota=rota):
+                resposta = self.client.get(rota)
+                self.assertEqual(resposta.status_code, 401)

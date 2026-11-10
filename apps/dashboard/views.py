@@ -2,14 +2,20 @@
 
 O painel é a primeira tela após o login e concentra indicadores de agenda,
 série histórica, distribuição por status/serviço e alertas clínicos. Toda a
-agregação é feita no backend para evitar que o frontend baixe a lista completa
-de atendimentos e para respeitar a fronteira de segurança/permissões.
+agregação é feita no backend (ver ``apps.dashboard.services``) para evitar que
+o frontend baixe a lista completa de atendimentos e para respeitar a fronteira
+de segurança/permissões.
+
+Endpoints:
+
+* ``GET /api/v1/dashboard/`` — payload completo usado pela tela principal.
+* ``GET /api/v1/dashboard/operacional/`` — apenas KPIs operacionais.
+* ``GET /api/v1/dashboard/historico/`` — séries e comparações históricas.
+* ``GET /api/v1/dashboard/filtros/`` — opções para os filtros do painel.
 """
 
 from datetime import timedelta
 
-from django.db.models import Count, Q
-from django.db.models.functions import TruncDate
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import IsAuthenticated
@@ -17,19 +23,22 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.atendimentos.models import Atendimento
-from apps.pets.models import Pet
 from apps.prontuario.models import Vacina, Vermifugacao
-from apps.tutores.models import Tutor
 
-# Janela da série histórica e da comparação "7 dias anteriores".
-DIAS_SERIE = 7
-# Janela usada no ranking de serviços (evita distorção de dias isolados).
-DIAS_SERVICOS = 30
+from .services import (
+    indicadores_historicos,
+    indicadores_operacionais,
+    obter_filtros,
+    opcoes_filtros,
+    serie_semana_principal,
+    servicos_principal,
+    status_serie_principal,
+    variacao_serie_principal,
+)
+
 # Limites de itens retornados nas listas do painel.
 LIMITE_AGENDA = 20
 LIMITE_ALERTAS = 8
-
-DIAS_SEMANA_CURTOS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"]
 
 
 def _hora_local(valor):
@@ -41,104 +50,14 @@ def _hora_local(valor):
     return valor.strftime("%H:%M")
 
 
-def _variacao_percentual(atual, anterior):
-    """Variação percentual inteira; ``None`` quando não há base de comparação."""
-    if not anterior:
-        return None
-    return round(((atual - anterior) / anterior) * 100)
-
-
-def _serie_semanal(hoje):
-    """Totais por dia dos últimos 7 dias, incluindo dias sem atendimento."""
-    inicio = hoje - timedelta(days=DIAS_SERIE - 1)
-    agregados = (
-        Atendimento.objects.filter(data_hora_inicio__date__gte=inicio)
-        .annotate(dia=TruncDate("data_hora_inicio"))
-        .values("dia")
-        .annotate(
-            total=Count("id"),
-            realizados=Count(
-                "id", filter=Q(status=Atendimento.Status.REALIZADO)
-            ),
-            pendentes=Count(
-                "id",
-                filter=Q(
-                    status__in=[
-                        Atendimento.Status.AGENDADO,
-                        Atendimento.Status.CONFIRMADO,
-                    ]
-                ),
-            ),
-        )
-    )
-    por_dia = {item["dia"]: item for item in agregados}
-
-    serie = []
-    for indice in range(DIAS_SERIE):
-        dia = inicio + timedelta(days=indice)
-        dados = por_dia.get(dia, {})
-        serie.append(
-            {
-                "iso": dia.isoformat(),
-                "label": DIAS_SEMANA_CURTOS[dia.weekday()],
-                "data": dia.strftime("%d/%m"),
-                "hoje": dia == hoje,
-                "total": dados.get("total", 0),
-                "realizados": dados.get("realizados", 0),
-                "pendentes": dados.get("pendentes", 0),
-            }
-        )
-    return serie
-
-
-def _status_semana(hoje):
-    """Contagem por status na mesma janela da série semanal."""
-    inicio = hoje - timedelta(days=DIAS_SERIE - 1)
-    contagem = {
-        item["status"]: item["total"]
-        for item in Atendimento.objects.filter(
-            data_hora_inicio__date__gte=inicio
-        )
-        .values("status")
-        .annotate(total=Count("id"))
-    }
-    return [
-        {
-            "status": valor,
-            "label": rotulo,
-            "total": contagem.get(valor, 0),
-        }
-        for valor, rotulo in Atendimento.Status.choices
-    ]
-
-
-def _servicos_mais_procurados(hoje):
-    """Top 5 tipos de serviço nos últimos 30 dias."""
-    inicio = hoje - timedelta(days=DIAS_SERVICOS - 1)
-    rotulos = dict(Atendimento.TipoServico.choices)
-    agregados = (
-        Atendimento.objects.filter(data_hora_inicio__date__gte=inicio)
-        .values("tipo_servico")
-        .annotate(total=Count("id"))
-        .order_by("-total", "tipo_servico")[:5]
-    )
-    return [
-        {
-            "tipo_servico": item["tipo_servico"],
-            "nome": rotulos.get(item["tipo_servico"], item["tipo_servico"]),
-            "total": item["total"],
-        }
-        for item in agregados
-    ]
-
-
-def _alertas_clinicos(hoje):
+def _alertas_clinicos(filtros):
     """Contagens e itens de retornos de vacina/vermifugação atrasados/próximos.
 
     Só entram retornos com data definida. A janela "próxima" é a mesma usada
     pelos módulos clínicos (``DIAS_ALERTA_RETORNO``), mantendo o painel
     coerente com as telas de vacinação e vermifugação.
     """
+    hoje = filtros.hoje
     limite_vacina = hoje + timedelta(days=Vacina.DIAS_ALERTA_RETORNO)
     limite_vermifugo = hoje + timedelta(
         days=Vermifugacao.DIAS_ALERTA_RETORNO
@@ -146,6 +65,13 @@ def _alertas_clinicos(hoje):
 
     vacinas = Vacina.objects.filter(data_retorno__isnull=False)
     vermifugacoes = Vermifugacao.objects.filter(data_retorno__isnull=False)
+    if filtros.profissional_id:
+        vacinas = vacinas.filter(
+            veterinario__profissional_id=filtros.profissional_id
+        )
+        vermifugacoes = vermifugacoes.filter(
+            veterinario__profissional_id=filtros.profissional_id
+        )
 
     contagens = {
         "vacinas": {
@@ -211,13 +137,26 @@ def _alertas_clinicos(hoje):
     return contagens
 
 
-def _agenda_do_dia(hoje):
-    """Atendimentos de hoje em ordem cronológica, com dados para navegação."""
-    atendimentos = (
-        Atendimento.objects.filter(data_hora_inicio__date=hoje)
-        .select_related("pet__tutor", "profissional")
-        .order_by("data_hora_inicio")[:LIMITE_AGENDA]
+def _agenda_do_dia(filtros):
+    """Atendimentos de hoje em ordem cronológica, com dados para navegação.
+
+    Respeita os filtros de profissional, tipo e status; o recorte temporal é
+    sempre o dia local de hoje (é a agenda do dia, não o período do painel).
+    """
+    atendimentos = Atendimento.objects.filter(
+        data_hora_inicio__date=filtros.hoje
     )
+    if filtros.profissional_id:
+        atendimentos = atendimentos.filter(
+            profissional_id=filtros.profissional_id
+        )
+    if filtros.tipo_servico:
+        atendimentos = atendimentos.filter(tipo_servico=filtros.tipo_servico)
+    if filtros.status:
+        atendimentos = atendimentos.filter(status=filtros.status)
+    atendimentos = atendimentos.select_related(
+        "pet__tutor", "profissional"
+    ).order_by("data_hora_inicio")[:LIMITE_AGENDA]
     agenda = []
     for atendimento in atendimentos:
         profissional = atendimento.profissional
@@ -248,39 +187,77 @@ class DashboardView(APIView):
     @extend_schema(responses={200: dict})
     def get(self, request):
         user = request.user
-        hoje = timezone.localdate()
-
+        filtros = obter_filtros(request.query_params)
         grupos = list(user.groups.values_list("name", flat=True))
 
-        serie = _serie_semanal(hoje)
-        inicio_atual = hoje - timedelta(days=DIAS_SERIE - 1)
-        inicio_anterior = inicio_atual - timedelta(days=DIAS_SERIE)
-        total_atual = sum(dia["total"] for dia in serie)
-        total_anterior = Atendimento.objects.filter(
-            data_hora_inicio__date__gte=inicio_anterior,
-            data_hora_inicio__date__lt=inicio_atual,
-        ).count()
+        operacional = indicadores_operacionais(filtros)
+        historico = indicadores_historicos(filtros)
 
         data = {
             "usuario": user.username,
             "perfil": grupos[0] if grupos else "sem perfil",
-            "atendimentos_hoje": Atendimento.objects.filter(
-                data_hora_inicio__date=hoje
-            ).count(),
-            "atendimentos_pendentes": Atendimento.objects.filter(
-                status=Atendimento.Status.AGENDADO
-            ).count(),
-            "total_pets": Pet.objects.count(),
-            "total_tutores": Tutor.objects.count(),
-            "serie_semanal": serie,
-            "variacao_semanal": _variacao_percentual(
-                total_atual, total_anterior
-            ),
-            "status_semana": _status_semana(hoje),
-            "servicos": _servicos_mais_procurados(hoje),
-            "servicos_periodo_dias": DIAS_SERVICOS,
-            "alertas": _alertas_clinicos(hoje),
-            "agenda_hoje": _agenda_do_dia(hoje),
+            "gerado_em": timezone.now().isoformat(),
+            "filtros": filtros.como_dict(),
+            # Chaves mantidas para compatibilidade com a tela e testes antigos.
+            "atendimentos_hoje": operacional["atendimentos_hoje"],
+            "atendimentos_pendentes": operacional["atendimentos_pendentes"],
+            "total_pets": operacional["total_animais"],
+            "total_tutores": operacional["total_tutores"],
+            "serie_semanal": serie_semana_principal(filtros),
+            "variacao_semanal": variacao_serie_principal(filtros),
+            "status_semana": status_serie_principal(filtros),
+            "servicos": servicos_principal(filtros),
+            "servicos_periodo_dias": filtros.dias,
+            "alertas": _alertas_clinicos(filtros),
+            "agenda_hoje": _agenda_do_dia(filtros),
+            # Blocos novos, também expostos em endpoints dedicados.
+            "operacional": operacional,
+            "historico": historico,
+            "comparacao": historico["comparacao"],
         }
 
         return Response(data)
+
+
+class DashboardOperacionalView(APIView):
+    """Indicadores operacionais isolados, sem depender de paginação."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses={200: dict})
+    def get(self, request):
+        filtros = obter_filtros(request.query_params)
+        return Response(
+            {
+                "filtros": filtros.como_dict(),
+                "gerado_em": timezone.now().isoformat(),
+                **indicadores_operacionais(filtros),
+            }
+        )
+
+
+class DashboardHistoricoView(APIView):
+    """Séries históricas, distribuição, ranking e comparação entre períodos."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses={200: dict})
+    def get(self, request):
+        filtros = obter_filtros(request.query_params)
+        return Response(
+            {
+                "filtros": filtros.como_dict(),
+                "gerado_em": timezone.now().isoformat(),
+                **indicadores_historicos(filtros),
+            }
+        )
+
+
+class DashboardFiltrosView(APIView):
+    """Opções de filtro (profissionais, tipos, status e limites de data)."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses={200: dict})
+    def get(self, request):
+        return Response(opcoes_filtros())

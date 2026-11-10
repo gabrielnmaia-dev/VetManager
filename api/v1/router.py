@@ -31,7 +31,12 @@ from apps.prontuario.views import (
     VacinaViewSet,
     VermifugacaoViewSet,
 )
-from apps.dashboard.views import DashboardView
+from apps.dashboard.views import (
+    DashboardFiltrosView,
+    DashboardHistoricoView,
+    DashboardOperacionalView,
+    DashboardView,
+)
 
 router = DefaultRouter()
 router.register("tutores", TutorViewSet, basename="tutor")
@@ -81,6 +86,21 @@ router.register(
 
 urlpatterns = router.urls + [
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
+    path(
+        "dashboard/operacional/",
+        DashboardOperacionalView.as_view(),
+        name="dashboard-operacional",
+    ),
+    path(
+        "dashboard/historico/",
+        DashboardHistoricoView.as_view(),
+        name="dashboard-historico",
+    ),
+    path(
+        "dashboard/filtros/",
+        DashboardFiltrosView.as_view(),
+        name="dashboard-filtros",
+    ),
     path("perfil/", PerfilView.as_view(), name="perfil"),
     path(
         "perfil/alterar-senha/",
