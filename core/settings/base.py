@@ -82,6 +82,7 @@ INSTALLED_APPS = [
     'apps.internacao.apps.InternacaoConfig',
     'apps.servicos.apps.ServicosConfig',
     'apps.financeiro.apps.FinanceiroConfig',
+    'apps.portal.apps.PortalConfig',
     'apps.base'
 ]
 
@@ -143,6 +144,12 @@ REST_FRAMEWORK = {
         'token_refresh': os.environ.get('THROTTLE_TOKEN_REFRESH', '30/min'),
         'token_logout': os.environ.get('THROTTLE_TOKEN_LOGOUT', '20/min'),
         'alterar_senha': os.environ.get('THROTTLE_ALTERAR_SENHA', '5/min'),
+        'portal_login': os.environ.get('THROTTLE_PORTAL_LOGIN', '10/min'),
+        'portal_refresh': os.environ.get('THROTTLE_PORTAL_REFRESH', '30/min'),
+        'portal_recuperacao': os.environ.get(
+            'THROTTLE_PORTAL_RECUPERACAO', '5/min'
+        ),
+        'portal_escrita': os.environ.get('THROTTLE_PORTAL_ESCRITA', '60/hour'),
     },
     # Quantidade de proxies reversos confiáveis à frente do Django.
     # Usado para descobrir o IP real do cliente via X-Forwarded-For
@@ -350,6 +357,19 @@ JWT_COOKIE_DOMAIN = os.environ.get("JWT_COOKIE_DOMAIN") or None
 # (ex.: staging em subpath do Funnel), defina algo como /staging-api/ para
 # não colidir com os cookies da aplicação publicada na raiz.
 JWT_COOKIE_PATH = os.environ.get("JWT_COOKIE_PATH") or "/"
+
+# --- Portal do tutor ---------------------------------------------------
+# Cookies e tempos de vida próprios. Nomes diferentes impedem que um token
+# de portal seja lido pela autenticação interna (e vice-versa).
+PORTAL_ACCESS_COOKIE_NAME = "portal_access"
+PORTAL_REFRESH_COOKIE_NAME = "portal_refresh"
+PORTAL_COOKIE_PATH = os.environ.get("PORTAL_COOKIE_PATH") or "/"
+PORTAL_ACCESS_MINUTOS = env_int("PORTAL_ACCESS_MINUTOS", 30)
+PORTAL_REFRESH_DIAS = env_int("PORTAL_REFRESH_DIAS", 7)
+PORTAL_CONVITE_HORAS = env_int("PORTAL_CONVITE_HORAS", 72)
+PORTAL_RECUPERACAO_MINUTOS = env_int("PORTAL_RECUPERACAO_MINUTOS", 60)
+# URL pública do SPA do portal, usada nos links enviados por e-mail.
+PORTAL_URL = os.environ.get("PORTAL_URL", "http://localhost:5173/portal")
 
 
 LOGGING = {

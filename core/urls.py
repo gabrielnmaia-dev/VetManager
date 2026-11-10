@@ -32,6 +32,10 @@ urlpatterns = [
     path('api/schema/swagger-ui/', SpectacularSwaggerView.as_view(url_name='schema')),
     path('api/schema/redoc/', SpectacularRedocView.as_view(url_name='schema')),
 
+    # Portal do tutor: autenticação e endpoints próprios, separados do interno.
+    path('api/v1/portal/', include('apps.portal.urls')),
+    path('api/v1/portal-admin/', include('apps.portal.urls_admin')),
+
     # Apps + JWT tudo em api/v1/
     path('api/v1/', include('api.v1.router')),
     path('api/v1/token/', TokenObtainPairView.as_view()),

@@ -105,6 +105,27 @@ class Prescricao(BaseModel):
         verbose_name="cancelada por",
     )
 
+    # Liberação explícita para o portal do tutor (padrão: não expor).
+    liberado_portal = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name="liberada no portal do tutor",
+    )
+    liberado_portal_em = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="liberada no portal em",
+    )
+    liberado_portal_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        editable=False,
+        related_name="+",
+        verbose_name="liberada no portal por",
+    )
+
     class Meta:
         ordering = ["-data_prescricao", "-created_at"]
         verbose_name = "prescrição"

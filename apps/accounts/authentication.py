@@ -55,6 +55,13 @@ class JWTCookieAuthentication(JWTAuthentication):
 
         validated_token = self.get_validated_token(raw_token)
 
+        # Um token de portal carrega a claim tipo="portal". Ele nunca deve
+        # abrir endpoints administrativos, mesmo que o usuário exista.
+        if validated_token.get("tipo") == "portal":
+            raise exceptions.AuthenticationFailed(
+                "Token do portal do tutor não é aceito na API interna."
+            )
+
         if token_veio_do_cookie:
             enforce_csrf(request)
 

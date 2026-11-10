@@ -119,6 +119,28 @@ class DocumentoClinico(BaseModel):
         verbose_name="usuário responsável",
     )
 
+    # Liberação explícita para o portal do tutor. O padrão é NÃO expor:
+    # o portal só mostra o que a clínica liberar individualmente.
+    liberado_portal = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name="liberado no portal do tutor",
+    )
+    liberado_portal_em = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="liberado no portal em",
+    )
+    liberado_portal_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        editable=False,
+        related_name="+",
+        verbose_name="liberado no portal por",
+    )
+
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
@@ -448,6 +470,27 @@ class DocumentoVeterinario(BaseModel):
     motivo_cancelamento = models.TextField(
         blank=True,
         verbose_name="motivo do cancelamento",
+    )
+
+    # Liberação explícita para o portal do tutor (padrão: não expor).
+    liberado_portal = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name="liberado no portal do tutor",
+    )
+    liberado_portal_em = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="liberado no portal em",
+    )
+    liberado_portal_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        editable=False,
+        related_name="+",
+        verbose_name="liberado no portal por",
     )
 
     criado_em = models.DateTimeField(auto_now_add=True)
