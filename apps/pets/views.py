@@ -17,7 +17,6 @@ from .serializers import (
     RacaSerializer,
     PetSerializer,
     PetResumoSerializer,
-    PetCreateSerializer,
     HistoricoResponsabilidadePetSerializer,
     MedicaoVitalSerializer,
 )
@@ -107,8 +106,10 @@ class PetViewSet(AuditModelViewSetMixin, viewsets.ModelViewSet):
         return qs
 
     def get_serializer_class(self):
-        if self.action == "create":
-            return PetCreateSerializer
+        # A criação avulsa de pet usa o mesmo serializer da edição, que aceita
+        # o tutor. ``PetCreateSerializer`` continua reservado aos cadastros
+        # aninhados (tutor + pets e atendimento rápido), onde o tutor vem do
+        # contexto e não do payload.
         return super().get_serializer_class()
 
     @action(detail=True, methods=["get"], url_path="historico-responsaveis")

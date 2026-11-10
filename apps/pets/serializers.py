@@ -225,10 +225,10 @@ class HistoricoResponsabilidadePetSerializer(serializers.ModelSerializer):
             "data_inicio",
             "data_fim",
             "motivo",
-            "criado_em",
-            "atualizado_em",
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ["id", "criado_em", "atualizado_em"]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class MedicaoVitalSerializer(serializers.ModelSerializer):
