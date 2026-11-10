@@ -48,6 +48,10 @@ from apps.estoque.views import (
     MovimentacaoEstoqueViewSet,
     ProdutoViewSet,
 )
+from apps.prescricao.views import (
+    AdministracaoMedicamentoViewSet,
+    PrescricaoViewSet,
+)
 
 router = DefaultRouter()
 router.register("tutores", TutorViewSet, basename="tutor")
@@ -110,6 +114,12 @@ router.register(
 router.register("inventarios", InventarioViewSet, basename="inventario")
 router.register(
     "itens-inventario", ItemInventarioViewSet, basename="item-inventario"
+)
+router.register("prescricoes", PrescricaoViewSet, basename="prescricao")
+router.register(
+    "administracoes-medicamento",
+    AdministracaoMedicamentoViewSet,
+    basename="administracao-medicamento",
 )
 
 urlpatterns = router.urls + [

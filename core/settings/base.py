@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     'apps.auditoria.apps.AuditoriaConfig',
     'apps.documentos',
     'apps.estoque.apps.EstoqueConfig',
+    'apps.prescricao.apps.PrescricaoConfig',
     'apps.base'
 ]
 
