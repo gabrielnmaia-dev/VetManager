@@ -52,6 +52,11 @@ from apps.prescricao.views import (
     AdministracaoMedicamentoViewSet,
     PrescricaoViewSet,
 )
+from apps.procedimentos.views import (
+    CategoriaProcedimentoViewSet,
+    ExecucaoProcedimentoViewSet,
+    ProcedimentoViewSet,
+)
 
 router = DefaultRouter()
 router.register("tutores", TutorViewSet, basename="tutor")
@@ -120,6 +125,17 @@ router.register(
     "administracoes-medicamento",
     AdministracaoMedicamentoViewSet,
     basename="administracao-medicamento",
+)
+router.register(
+    "categorias-procedimento",
+    CategoriaProcedimentoViewSet,
+    basename="categoria-procedimento",
+)
+router.register("procedimentos", ProcedimentoViewSet, basename="procedimento")
+router.register(
+    "execucoes-procedimento",
+    ExecucaoProcedimentoViewSet,
+    basename="execucao-procedimento",
 )
 
 urlpatterns = router.urls + [
