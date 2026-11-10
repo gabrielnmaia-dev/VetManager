@@ -37,6 +37,7 @@ from apps.dashboard.views import (
     DashboardOperacionalView,
     DashboardView,
 )
+from apps.estoque.views import CategoriaProdutoViewSet, ProdutoViewSet
 
 router = DefaultRouter()
 router.register("tutores", TutorViewSet, basename="tutor")
@@ -83,6 +84,12 @@ router.register("vacinas", VacinaViewSet, basename="vacina")
 router.register(
     "vermifugacoes", VermifugacaoViewSet, basename="vermifugacao"
 )
+router.register(
+    "categorias-produto",
+    CategoriaProdutoViewSet,
+    basename="categoria-produto",
+)
+router.register("produtos", ProdutoViewSet, basename="produto")
 
 urlpatterns = router.urls + [
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
